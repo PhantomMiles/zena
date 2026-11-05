@@ -1,0 +1,54 @@
+{
+  "colors": {
+    "primary": {
+      "name": "Midnight Blue",
+      "scale": {
+        "50": "#F0F4FA",
+        "100": "#DCE6F5",
+        "600": "#1F4278",
+        "700": "#14305A",
+        "800": "#0B1F3A",
+        "900": "#071326"
+      },
+      "main": "800"
+    },
+    "secondary": {
+      "name": "Verdant Green",
+      "scale": {
+        "50": "#EEFBF4",
+        "100": "#D9F5E6",
+        "500": "#1FB36B",
+        "700": "#0E7A47"
+      },
+      "main": "500",
+      "text_safe_on_white": "700"
+    },
+    "accent": {
+      "name": "Signal Amber",
+      "role": ["in_transit", "pending", "attention"],
+      "scale": {
+        "50": "#FFFAEB",
+        "100": "#FDEFD3",
+        "500": "#F5A524",
+        "700": "#995700"
+      },
+      "text_safe_on_white": "700",
+      "rationale": "A warm amber contrasts clearly with the cool midnight blue and verdant green, signalling movement or attention; its 700 shade provides approximately 5.65:1 contrast against white, meeting WCAG AA for normal text."
+    }
+  },
+  "neutrals": {
+    "0": "#FFFFFF",
+    "50": "#F5F7FA",
+    "100": "#E8ECF2",
+    "300": "#B7C0CE",
+    "500": "#6B7A90",
+    "700": "#2E3A4D",
+    "900": "#0B1F3A"
+  },
+  "semantic": {
+    "success": "{colors.secondary.scale.500}",
+    "warning": "{colors.accent.scale.500}",
+    "error": "#E5484D",
+    "info": "#4C8DFF"
+  }
+}

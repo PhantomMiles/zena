@@ -1,0 +1,4 @@
+# Dockerfile and docker-compose definitions go here (Phase 1).
+# Member node, sync agent, and PostgreSQL compose files
+# will be added alongside the first working node implementation.
+

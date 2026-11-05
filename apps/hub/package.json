@@ -1,0 +1,21 @@
+{
+  "name": "@zena/hub",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zena Hub — Next.js web application for operations directors, finance managers, and node administrators.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "vitest": "*",
+    "@vitest/coverage-v8": "*",
+    "typescript": "*"
+  }
+}

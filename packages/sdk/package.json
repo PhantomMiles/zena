@@ -1,0 +1,24 @@
+{
+  "name": "@zena/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zena SDK — shared TypeScript types, ABI re-exports, and client utilities consumed by apps/node, apps/hub, apps/field, and apps/settle.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@zena/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "*",
+    "@vitest/coverage-v8": "*",
+    "typescript": "*"
+  }
+}

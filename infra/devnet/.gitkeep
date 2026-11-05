@@ -1,0 +1,4 @@
+# Hyperledger Besu devnet configuration goes here (Phase 1).
+# Docker Compose, genesis.json, validator keystores, and bootnode config
+# will be added when the consortium chain is first bootstrapped.
+

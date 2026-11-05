@@ -1,0 +1,21 @@
+{
+  "name": "@zena/field",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zena Field — Expo / React Native driver and yard manager app. Offline-first. Supports dual-signed handovers, proof-of-delivery capture, and earnings tracking.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "vitest": "*",
+    "@vitest/coverage-v8": "*",
+    "typescript": "*"
+  }
+}

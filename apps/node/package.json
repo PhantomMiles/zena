@@ -1,0 +1,21 @@
+{
+  "name": "@zena/node",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zena member node — API server and sync agent that each logistics company runs. Keeps private data, signs events, and publishes to the consortium chain.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "vitest": "*",
+    "@vitest/coverage-v8": "*",
+    "typescript": "*"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@zena/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Zena smart contracts — Solidity source for event registry, dual-signed handover, settlement, governance, and membership. Targets Hyperledger Besu (EVM-compatible).",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "vitest": "*",
+    "@vitest/coverage-v8": "*",
+    "typescript": "*"
+  }
+}
