@@ -1,0 +1,132 @@
+name: zena-devnet
+
+services:
+  validator1:
+    image: hyperledger/besu:24.4.0
+    container_name: zena-validator1
+    restart: unless-stopped
+    volumes:
+      - ./genesis.json:/opt/besu/genesis.json:ro
+      - ./config/besu.common.toml:/opt/besu/config/besu.common.toml:ro
+      - ./keys/validator1/key:/opt/besu/keys/key:ro
+      - ./static-nodes.json:/opt/besu/data/static-nodes.json:ro
+      - ./data/validator1:/opt/besu/data
+    ports:
+      - '8541:8545' # Internal validator RPC for voting (qbft_proposeValidatorVote)
+      - '30303:30303'
+    command:
+      - --config-file=/opt/besu/config/besu.common.toml
+      - --node-private-key-file=/opt/besu/keys/key
+      - --rpc-http-enabled=true
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT
+      - --rpc-http-cors-origins=*
+    networks:
+      - zena-net
+
+  validator2:
+    image: hyperledger/besu:24.4.0
+    container_name: zena-validator2
+    restart: unless-stopped
+    volumes:
+      - ./genesis.json:/opt/besu/genesis.json:ro
+      - ./config/besu.common.toml:/opt/besu/config/besu.common.toml:ro
+      - ./keys/validator2/key:/opt/besu/keys/key:ro
+      - ./static-nodes.json:/opt/besu/data/static-nodes.json:ro
+      - ./data/validator2:/opt/besu/data
+    ports:
+      - '8542:8545'
+      - '30304:30303'
+    command:
+      - --config-file=/opt/besu/config/besu.common.toml
+      - --node-private-key-file=/opt/besu/keys/key
+      - --rpc-http-enabled=true
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT
+      - --rpc-http-cors-origins=*
+    networks:
+      - zena-net
+
+  validator3:
+    image: hyperledger/besu:24.4.0
+    container_name: zena-validator3
+    restart: unless-stopped
+    volumes:
+      - ./genesis.json:/opt/besu/genesis.json:ro
+      - ./config/besu.common.toml:/opt/besu/config/besu.common.toml:ro
+      - ./keys/validator3/key:/opt/besu/keys/key:ro
+      - ./static-nodes.json:/opt/besu/data/static-nodes.json:ro
+      - ./data/validator3:/opt/besu/data
+    ports:
+      - '8543:8545'
+      - '30305:30303'
+    command:
+      - --config-file=/opt/besu/config/besu.common.toml
+      - --node-private-key-file=/opt/besu/keys/key
+      - --rpc-http-enabled=true
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT
+      - --rpc-http-cors-origins=*
+    networks:
+      - zena-net
+
+  validator4:
+    image: hyperledger/besu:24.4.0
+    container_name: zena-validator4
+    restart: unless-stopped
+    volumes:
+      - ./genesis.json:/opt/besu/genesis.json:ro
+      - ./config/besu.common.toml:/opt/besu/config/besu.common.toml:ro
+      - ./keys/validator4/key:/opt/besu/keys/key:ro
+      - ./static-nodes.json:/opt/besu/data/static-nodes.json:ro
+      - ./data/validator4:/opt/besu/data
+    ports:
+      - '8544:8545'
+      - '30306:30303'
+    command:
+      - --config-file=/opt/besu/config/besu.common.toml
+      - --node-private-key-file=/opt/besu/keys/key
+      - --rpc-http-enabled=true
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT
+      - --rpc-http-cors-origins=*
+    networks:
+      - zena-net
+
+  rpc-node:
+    image: hyperledger/besu:24.4.0
+    container_name: zena-rpc-node
+    restart: unless-stopped
+    volumes:
+      - ./genesis.json:/opt/besu/genesis.json:ro
+      - ./config/besu.common.toml:/opt/besu/config/besu.common.toml:ro
+      - ./keys/rpc-node/key:/opt/besu/keys/key:ro
+      - ./static-nodes.json:/opt/besu/data/static-nodes.json:ro
+      - ./data/rpc-node:/opt/besu/data
+    ports:
+      - '8545:8545' # Main HTTP JSON-RPC gateway for apps/node, apps/hub, apps/settle
+      - '8546:8546' # Main WebSocket RPC
+      - '30307:30303'
+    command:
+      - --config-file=/opt/besu/config/besu.common.toml
+      - --node-private-key-file=/opt/besu/keys/key
+      - --rpc-http-enabled=true
+      - --rpc-http-host=0.0.0.0
+      - --rpc-http-port=8545
+      - --rpc-http-api=ETH,NET,WEB3,QBFT,TXPOOL
+      - --rpc-http-cors-origins=*
+      - --rpc-ws-enabled=true
+      - --rpc-ws-host=0.0.0.0
+      - --rpc-ws-port=8546
+      - --rpc-ws-api=ETH,NET,WEB3,QBFT
+    networks:
+      - zena-net
+
+networks:
+  zena-net:
+    name: zena-devnet-network
+    driver: bridge

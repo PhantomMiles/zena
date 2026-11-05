@@ -1,0 +1,18 @@
+# Zena Network - Common Besu Configuration
+genesis-file = "/opt/besu/genesis.json"
+data-path = "/opt/besu/data"
+static-nodes-file = "/opt/besu/data/static-nodes.json"
+network-id = 1337
+
+# P2P
+p2p-enabled = true
+p2p-host = "0.0.0.0"
+p2p-port = 30303
+discovery-enabled = false
+
+# Gas
+min-gas-price = 0
+
+# Logging
+logging = "INFO"
+

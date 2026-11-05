@@ -34,3 +34,11 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 
+# Devnet local chain data & keys (local development only)
+infra/devnet/data/
+infra/devnet/keys/
+infra/devnet/developer-accounts.json
+infra/devnet/genesis.json
+infra/devnet/static-nodes.json
+
+
