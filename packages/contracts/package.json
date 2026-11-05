@@ -14,8 +14,13 @@
     "dev": "tsc --watch"
   },
   "devDependencies": {
-    "vitest": "*",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@vitest/coverage-v8": "*",
-    "typescript": "*"
+    "hardhat": "^2.29.1",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1"
   }
 }
