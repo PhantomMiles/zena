@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0B1F3A">
+  <meta name="description" content="Zena Network — Shared logistics ledger and settlement engine. One record. Every carrier.">
+  <title>ZENA — Logistics Network &amp; Settlement Engine</title>
+
+  <!-- PWA Manifest & App Icons -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="apple-touch-icon" href="./icons/icon.svg">
+
+  <!-- Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="./css/styles.css">
+
+  <!-- Lucide Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+  <!-- Offline Notice Strip (Wireframe Section 05 & 10) -->
+  <div id="offlineBanner" class="offline-banner hidden">
+    <div class="offline-banner-left">
+      <i data-lucide="wifi-off" style="width: 16px; height: 16px;"></i>
+      <span>⚠ Offline Mode — saved <span id="offlineMinutesText">14 min ago</span>. Live updates paused. Handover scans will queue in local IndexedDB.</span>
+    </div>
+    <button id="bannerSyncBtn" class="offline-banner-btn">Force Sync</button>
+  </div>
+
+  <div id="app">
+
+    <!-- DESKTOP SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-mark">
+          <svg viewBox="0 0 32 32" width="22" height="22" fill="none">
+            <path d="M6 8 L26 8 L6 24 L26 24" stroke="#1FB36B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="6" cy="8" r="3" fill="#1FB36B"/>
+            <circle cx="16" cy="16" r="3" fill="#F5A524"/>
+            <circle cx="26" cy="24" r="3" fill="#3B82F6"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>ZENA</h1>
+          <span class="brand-tag">Consortium Node</span>
+        </div>
+      </div>
+
+      <div class="company-selector-wrap">
+        <label style="font-size: 10px; text-transform: uppercase; color: var(--text-subtle); font-weight: 700; margin-bottom: 4px; display: block;">Active Node Identity</label>
+        <select id="companySelector" class="company-dropdown">
+          <option value="Astraea Logistics">Astraea Logistics (Forwarder)</option>
+          <option value="Amira Freight Kano">Amira Freight (Kano Hub)</option>
+          <option value="North Sea Terminals">North Sea Terminals (Apapa)</option>
+          <option value="Intercity Haulage">Intercity Haulage (Carrier)</option>
+        </select>
+      </div>
+
+      <nav class="nav-menu">
+        <span class="nav-section-label">Operations</span>
+        <div class="nav-item active" data-view="dashboard">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </div>
+        <div class="nav-item" data-view="shipments">
+          <i data-lucide="package"></i>
+          <span>Shipments</span>
+        </div>
+        <div class="nav-item" data-view="scan">
+          <i data-lucide="qr-code"></i>
+          <span>Field Scan / Handover</span>
+        </div>
+        <div class="nav-item" data-view="queue">
+          <i data-lucide="inbox"></i>
+          <span>Offline Queue</span>
+          <span class="nav-badge offline-queue-count" style="display: none;">0</span>
+        </div>
+
+        <span class="nav-section-label" style="margin-top: 10px;">Finance &amp; Vault</span>
+        <div class="nav-item" data-view="settlements">
+          <i data-lucide="credit-card"></i>
+          <span>Settlements &amp; Vault</span>
+        </div>
+
+        <span class="nav-section-label" style="margin-top: 10px;">Consortium Network</span>
+        <div class="nav-item" data-view="node">
+          <i data-lucide="server"></i>
+          <span>Node Admin (QBFT)</span>
+        </div>
+        <div class="nav-item" data-view="governance">
+          <i data-lucide="vote"></i>
+          <span>Governance Portal</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="node-status-pill">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="nodeStatusDot" class="status-dot"></span>
+            <span id="nodeStatusText" style="font-weight: 500;">QBFT 4/4 Connected</span>
+          </div>
+          <span id="qbftBlockTicker" style="font-family: var(--font-mono); color: var(--text-muted);">Block #128,492</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-subtle);">
+          <span>Hyperledger Besu EVM</span>
+          <span>v24.1.0</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN WRAPPER -->
+    <main class="main-wrapper">
+
+      <!-- TOP BAR -->
+      <header class="top-bar">
+        <div class="top-bar-left">
+          <div>
+            <h2 id="topViewTitle" class="view-title">Operations Dashboard</h2>
+            <div id="topViewSubtitle" class="view-subtitle">Astraea Logistics — Node Active</div>
+          </div>
+        </div>
+
+        <div class="top-bar-right">
+          <!-- Interactive Network Toggle for testing offline features -->
+          <button id="networkToggleBtn" class="network-toggle-btn" title="Toggle Network Connection Simulation">
+            <span class="status-dot"></span>
+            <span>Online / Synced</span>
+          </button>
+
+          <!-- Top Action Button -->
+          <button id="topCreateShipmentBtn" class="btn btn-primary btn-sm">
+            <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+            <span>Create Shipment</span>
+          </button>
+
+          <!-- User Pill -->
+          <div style="display: flex; align-items: center; gap: 8px; padding-left: 8px; border-left: 1px solid var(--border-color);">
+            <div style="width: 30px; height: 30px; border-radius: 50%; background: var(--bg-card); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; color: var(--accent-blue);">
+              AN
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-size: 12px; font-weight: 600;">Ada Nwosu</span>
+              <span style="font-size: 10px; color: var(--text-muted);">Ops Director</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- SCROLLABLE CONTENT CANVAS -->
+      <div class="content-area">
+
+        <!-- ============================================================== -->
+        <!-- VIEW 1: DASHBOARD (Wireframe Section 04)                        -->
+        <!-- ============================================================== -->
+        <section id="view-dashboard" class="view-panel active">
+          <!-- Summary Bar -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-header">
+                <span>Active Consignments</span>
+                <i data-lucide="truck" style="width: 16px; height: 16px;"></i>
+              </div>
+              <div id="dashActiveShipments" class="stat-value">14</div>
+              <div class="stat-footer">
+                <span style="color: var(--accent-emerald);">● All monitored</span> on corridor
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-header">
+                <span>Pending Dual-Signatures</span>
+                <i data-lucide="pen-tool" style="width: 16px; height: 16px;"></i>
+              </div>
+              <div id="dashPendingHandovers" class="stat-value" style="color: var(--accent-amber);">3</div>
+              <div class="stat-footer">
+                <span>Requires yard or driver confirmation</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-header">
+                <span>Unsettled Liquidity</span>
+                <i data-lucide="wallet" style="width: 16px; height: 16px;"></i>
+              </div>
+              <div id="dashUnsettledValue" class="stat-value">€28,800</div>
+              <div class="stat-footer">
+                <span style="color: var(--accent-blue);">Ready for auto-release upon POD</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-header">
+                <span>Consortium Sync Health</span>
+                <i data-lucide="shield-check" style="width: 16px; height: 16px;"></i>
+              </div>
+              <div class="stat-value" style="color: var(--accent-emerald);">100%</div>
+              <div class="stat-footer">
+                <span>4/4 QBFT Validators in agreement</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dual Column Workspace -->
+          <div class="dashboard-split">
+            <!-- Left Column: Active Handover Tasks -->
+            <div class="panel-card">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <i data-lucide="clock" style="width: 16px; height: 16px; color: var(--accent-amber);"></i>
+                  <span>Active Handover Tasks Requiring Action</span>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="window.zenaApp.navigateToView('shipments')">
+                  View All
+                </button>
+              </div>
+              <div id="dashActionTaskList" class="panel-body">
+                <!-- Dynamically rendered task items -->
+              </div>
+            </div>
+
+            <!-- Right Column: Settlement & Liquidity Feed -->
+            <div class="panel-card">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <i data-lucide="check-circle" style="width: 16px; height: 16px; color: var(--accent-emerald);"></i>
+                  <span>Payment Liquidity &amp; Settlement Feed</span>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="window.zenaApp.navigateToView('settlements')">
+                  Go to Vault
+                </button>
+              </div>
+              <div class="panel-body">
+                <div style="background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 12px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 600;">ZN-26041 · Sesame Export</span>
+                    <span class="chip chip-emerald">POD Verified</span>
+                  </div>
+                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                    Carrier: Intercity Haulage · Escrow Released: <strong>€28,800 EUR</strong>
+                  </div>
+                  <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-subtle); margin-top: 6px;">
+                    Bank Rails Ref: TXN-NGN-89410291 · Block #128,495
+                  </div>
+                </div>
+
+                <div style="background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 600;">ZN-31004 · Cocoa Beans 30t</span>
+                    <span class="chip chip-emerald">Settled</span>
+                  </div>
+                  <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                    Carrier: Western Haulage Ltd · Payout: <strong>€35,000 EUR</strong>
+                  </div>
+                  <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-subtle); margin-top: 6px;">
+                    Bank Rails Ref: TXN-NGN-51009182 · Block #128,480
+                  </div>
+                </div>
+
+                <div style="margin-top: 16px; text-align: center;">
+                  <button id="dashCreateShipmentBtn" class="btn btn-primary" style="width: 100%;">
+                    + Create New Shipment Consignment
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 2: SHIPMENT LIST & FILTER ENGINE (Section 05)             -->
+        <!-- ============================================================== -->
+        <section id="view-shipments" class="view-panel">
+          <div class="filter-bar-wrap">
+            <div class="search-box-row">
+              <div class="search-input-wrap">
+                <i data-lucide="search" style="width: 16px; height: 16px;"></i>
+                <input id="shipmentSearchInput" type="text" class="search-input" placeholder="Search shipments: Shipment code, cargo, carrier, or route corridor...">
+              </div>
+              <button class="btn btn-primary" onclick="window.zenaApp.openCreateShipmentModal()">
+                + Create Shipment
+              </button>
+            </div>
+
+            <div class="filter-tabs-row">
+              <div class="tab-pill-group">
+                <button class="tab-pill active" data-filter="ALL">All Shipments</button>
+                <button class="tab-pill" data-filter="IN_TRANSIT">In-Transit</button>
+                <button class="tab-pill" data-filter="PENDING">Pending Sign-off</button>
+                <button class="tab-pill" data-filter="SETTLED">Settled</button>
+              </div>
+
+              <!-- Wireframe State Switcher Bar (Directly allows inspecting all wireframe conditions!) -->
+              <div class="state-sim-bar">
+                <span class="state-sim-label">Figma Wireframe States:</span>
+                <button class="state-btn active" data-state="DEFAULT">Populated</button>
+                <button class="state-btn" data-state="LOADING">Loading (05)</button>
+                <button class="state-btn" data-state="ERROR">Error 500 (05)</button>
+                <button class="state-btn" data-state="OFFLINE">Offline (05)</button>
+                <button class="state-btn" data-state="EMPTY">Empty</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Container for Data Table (Desktop) & Cards (Mobile) -->
+          <div id="shipmentListContainer">
+            <!-- Rendered by JS -->
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 3: FIELD SCAN & OFFLINE HANDOVER (Section 09 & 10)         -->
+        <!-- ============================================================== -->
+        <section id="view-scan" class="view-panel">
+          <div class="scanner-container">
+            <div class="panel-card" style="width: 100%;">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <i data-lucide="camera" style="width: 18px; height: 18px; color: var(--accent-emerald);"></i>
+                  <span>Field Camera Scanner &amp; QR Capture</span>
+                </div>
+                <span class="chip chip-emerald">WebRTC Active</span>
+              </div>
+              <div class="panel-body">
+                <!-- Video Viewfinder with animated reticle -->
+                <div class="viewfinder-card">
+                  <video id="scannerVideo" playsinline autoplay muted></video>
+                  <div class="scanner-overlay">
+                    <div class="scanner-reticle">
+                      <div class="scanner-scanline"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="camera-controls" style="margin-top: 14px;">
+                  <button id="snapPhotoBtn" class="btn btn-secondary">
+                    <i data-lucide="camera"></i>
+                    <span>Snap Proof Photo</span>
+                  </button>
+                  <button id="mockScanQrBtn" class="btn btn-blue">
+                    <i data-lucide="scan"></i>
+                    <span>Mock Scan QR (ZN-26041)</span>
+                  </button>
+                </div>
+
+                <!-- Snapshot Preview -->
+                <div style="margin-top: 14px; text-align: center;">
+                  <img id="capturedPhotoPreview" style="max-height: 120px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: none; margin: 0 auto;" alt="Proof photo preview">
+                </div>
+
+                <!-- Field Form -->
+                <div style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                  <div class="form-group">
+                    <label class="form-label">Shipment Consignment Code</label>
+                    <input id="fieldShipmentCodeInput" type="text" class="form-input" placeholder="e.g. ZN-26041" value="ZN-26041">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Handover Condition Notes &amp; Seal Check</label>
+                    <textarea id="fieldHandoverNoteInput" class="form-textarea" rows="2" placeholder="Describe container condition, seal number, and temperature if cold-chain...">Container seal #NG-88910 intact. No external pallet damage.</textarea>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Handover Type</label>
+                    <select class="form-select">
+                      <option>Interchange Transfer (Carrier to Yard)</option>
+                      <option>Origin Pickup (Shipper to Carrier)</option>
+                      <option>Final Proof of Delivery (Yard to Port Terminal)</option>
+                    </select>
+                  </div>
+
+                  <button id="submitFieldHandoverBtn" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
+                    <i data-lucide="check"></i>
+                    <span>Submit &amp; Record Handover</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 4: OFFLINE QUEUE (Section 10)                              -->
+        <!-- ============================================================== -->
+        <section id="view-queue" class="view-panel">
+          <div class="panel-card" style="max-width: 800px; margin: 0 auto;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <i data-lucide="database" style="width: 18px; height: 18px; color: var(--accent-amber);"></i>
+                <span>Local IndexedDB Handover Queue (`zena_offline_queue`)</span>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="window.zenaApp.syncOfflineQueue()">
+                <i data-lucide="refresh-cw"></i>
+                <span>Force Sync All</span>
+              </button>
+            </div>
+            <div class="panel-body">
+              <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+                When cellular or satellite connectivity drops in transit, field custody handovers are securely queued in client-side IndexedDB with photo data URLs and GPS coordinates. They are committed to the Besu node once online.
+              </p>
+              <div id="offlineQueueList">
+                <!-- Dynamically populated from IndexedDB -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 5: SETTLEMENTS & VAULT (Section 11 & 13)                   -->
+        <!-- ============================================================== -->
+        <section id="view-settlements" class="view-panel">
+          <div class="settlement-card-grid">
+            <!-- Left: Contract Settlement Release -->
+            <div class="panel-card">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <i data-lucide="badge-dollar-sign" style="width: 18px; height: 18px; color: var(--accent-emerald);"></i>
+                  <span>Contract Settlement — ZN-26041 (Sesame)</span>
+                </div>
+                <span id="settlementEligibilityNotice" class="chip chip-emerald">POD Verified</span>
+              </div>
+              <div class="panel-body">
+                <div style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
+                  Terms: <strong>EUR 28,800 on verified POD</strong>. Carrier completed transit from Kano to Apapa Port Terminal. Both parties have signed the custody handover.
+                </div>
+
+                <div class="financial-receipt">
+                  <div class="receipt-row">
+                    <span style="color: var(--text-muted);">Agreed Freight Rate</span>
+                    <strong id="settlementBaseRate">€28,800.00</strong>
+                  </div>
+                  <div class="receipt-row">
+                    <span style="color: var(--text-muted);">Dispute Holds / Penalties</span>
+                    <span style="color: var(--accent-emerald);">€0.00 (Zero Claims)</span>
+                  </div>
+                  <div class="receipt-row">
+                    <span style="color: var(--text-muted);">Licensed Banking Partner</span>
+                    <span>Paystack / Flutterwave Treasury</span>
+                  </div>
+                  <div class="receipt-row total">
+                    <span>Final Carrier Net Payout</span>
+                    <span id="settlementNetPayout">€28,800.00 EUR</span>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; margin-top: 18px;">
+                  <button id="releaseSettlementBtn" class="btn btn-primary" style="flex: 1;">
+                    <i data-lucide="send"></i>
+                    <span>Release Settlement (€28,800)</span>
+                  </button>
+                  <button id="exportEvidencePackBtn" class="btn btn-outline">
+                    <i data-lucide="download"></i>
+                    <span>Export Evidence Pack</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Finance & Claims Portfolio (Section 13) -->
+            <div class="panel-card">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <i data-lucide="pie-chart" style="width: 18px; height: 18px; color: var(--accent-blue);"></i>
+                  <span>Finance &amp; Claims Portfolio</span>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                  <div style="background: var(--bg-deep); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Outstanding Receivables</div>
+                    <div style="font-size: 20px; font-weight: 700; margin-top: 4px;">€62,400</div>
+                  </div>
+                  <div style="background: var(--bg-deep); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Under Review (Flags)</div>
+                    <div style="font-size: 20px; font-weight: 700; color: var(--accent-amber); margin-top: 4px;">2 Claims</div>
+                  </div>
+                </div>
+
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+                  All invoice line items on Zena are linked to cryptographic event hashes. Insurers and trade-finance banks verify handover timestamps directly from public L2 Merkle anchors.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 6: NODE ADMIN (Section 14)                                -->
+        <!-- ============================================================== -->
+        <section id="view-node" class="view-panel">
+          <div class="panel-card" style="margin-bottom: 20px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <i data-lucide="cpu" style="width: 18px; height: 18px; color: var(--accent-blue);"></i>
+                <span>Besu QBFT Consensus &amp; Node Health</span>
+              </div>
+              <span class="chip chip-emerald">Consensus Synchronized</span>
+            </div>
+            <div class="panel-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                <div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Consensus Engine</div>
+                  <div style="font-weight: 600; font-size: 14px;">QBFT (Quorum BFT)</div>
+                </div>
+                <div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Block Period</div>
+                  <div style="font-weight: 600; font-size: 14px;">2.0s Deterministic</div>
+                </div>
+                <div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Fault Tolerance ($N=4$)</div>
+                  <div style="font-weight: 600; font-size: 14px;">$F=1$, Quorum $Q=3$</div>
+                </div>
+                <div>
+                  <div style="font-size: 11px; color: var(--text-muted);">Public L2 Anchor</div>
+                  <div style="font-weight: 600; font-size: 14px;">Polygon / Base Merkle Root</div>
+                </div>
+              </div>
+
+              <div style="background: var(--bg-deep); border: 1px solid var(--border-color); padding: 12px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; word-break: break-all; color: #7DD3FC;">
+                Enode: enode://0xfe3b557e8fb62b89f4916b721be55ceb828dbd73@127.0.0.1:30303?discport=0
+              </div>
+            </div>
+          </div>
+
+          <!-- Connected Peers -->
+          <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.04em;">
+            Consortium Member Validators (4 Active)
+          </h3>
+          <div id="nodeValidatorPeersList" class="peer-table-grid">
+            <!-- Rendered by JS -->
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 7: GOVERNANCE PORTAL (Section 16)                          -->
+        <!-- ============================================================== -->
+        <section id="view-governance" class="view-panel">
+          <div style="max-width: 800px; margin: 0 auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+              <div>
+                <h3 style="font-size: 16px; font-weight: 700;">Consortium Governance Proposals</h3>
+                <p style="font-size: 12px; color: var(--text-muted);">One-member-one-vote on network protocol standards, fee schedules, and validator rotation.</p>
+              </div>
+              <span class="chip chip-blue">Charter: 1 Member = 1 Vote</span>
+            </div>
+
+            <div id="governanceProposalsList">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- MOBILE BOTTOM NAVIGATION TAB BAR (< 900px) -->
+    <nav class="mobile-bottom-nav">
+      <div class="mobile-nav-tab active" data-view="dashboard">
+        <i data-lucide="layout-dashboard"></i>
+        <span>Dash</span>
+      </div>
+      <div class="mobile-nav-tab" data-view="shipments">
+        <i data-lucide="package"></i>
+        <span>Shipments</span>
+      </div>
+      <div class="mobile-nav-tab" data-view="scan">
+        <i data-lucide="scan"></i>
+        <span>Scan</span>
+      </div>
+      <div class="mobile-nav-tab" data-view="queue">
+        <i data-lucide="inbox"></i>
+        <span>Queue</span>
+        <span class="mobile-badge offline-queue-count" style="display: none;">0</span>
+      </div>
+      <div class="mobile-nav-tab" data-view="settlements">
+        <i data-lucide="credit-card"></i>
+        <span>Settle</span>
+      </div>
+    </nav>
+
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: FOUR-STEP SHIPMENT CREATION WIZARD (Section 06)                -->
+  <!-- ==================================================================== -->
+  <div id="createShipmentModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title">Create Consignment · Four-Step Wizard</span>
+        <button id="closeWizardModalBtn" class="modal-close-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <!-- Stepper Header -->
+      <div class="wizard-stepper">
+        <div class="step-tab active" data-step="1">
+          <span class="step-number">1</span>
+          <span>Shipment Details</span>
+        </div>
+        <div class="step-tab" data-step="2">
+          <span class="step-number">2</span>
+          <span>Carrier &amp; Subcontract</span>
+        </div>
+        <div class="step-tab" data-step="3">
+          <span class="step-number">3</span>
+          <span>Evidence Rules</span>
+        </div>
+        <div class="step-tab" data-step="4">
+          <span class="step-number">4</span>
+          <span>Review &amp; Dispatch</span>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- Step 1: Shipment Details -->
+        <div class="wizard-step-pane active" data-step="1">
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">Cargo Commodity Description</label>
+              <input type="text" class="form-input" value="Sesame — 24 metric tonnes">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Quantity / Net Tonnage</label>
+              <input type="text" class="form-input" value="24 metric tonnes">
+            </div>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">Origin Sender / Dispatch Hub</label>
+              <input type="text" class="form-input" value="Kano Highway Hub (Amira Logistics)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Destination Consignee / Port Terminal</label>
+              <input type="text" class="form-input" value="Apapa Port Terminal, Lagos (North Sea Quay)">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Route Corridor Guidance</label>
+            <textarea class="form-textarea" rows="2">Kano Highway Hub -> Apapa Port Terminal -> North Sea Quay. Dual-carrier operation with compliance inspection at mid-corridor yard.</textarea>
+          </div>
+        </div>
+
+        <!-- Step 2: Carrier & Terms -->
+        <div class="wizard-step-pane" data-step="2">
+          <div class="form-group">
+            <label class="form-label">Assign Subcontract Carrier</label>
+            <select class="form-select">
+              <option selected>Intercity Haulage (Musa Danjuma - 40 Trucks)</option>
+              <option>Trans-Niger Fleet Ltd</option>
+              <option>Western Haulage Ltd</option>
+            </select>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label">Agreed Freight Rate (€ EUR)</label>
+              <input type="number" class="form-input" value="28800">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Delivery SLA Window (Hours)</label>
+              <input type="number" class="form-input" value="36">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Carrier Node Address</label>
+            <input type="text" class="form-input" readonly value="0x4d5C26b5E3c52A855A94f273C1fC1A5b661d9D10" style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">
+          </div>
+        </div>
+
+        <!-- Step 3: Evidence Rules -->
+        <div class="wizard-step-pane" data-step="3">
+          <div class="form-group">
+            <label class="form-label">Required Custody Checkpoint Signatures</label>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                <input type="checkbox" checked disabled>
+                <span>Origin Pickup Signature (Shipper Warehouse + Carrier Driver)</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                <input type="checkbox" checked>
+                <span>Mid-corridor Yard Inspection Signature &amp; Seal Verification</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                <input type="checkbox" checked disabled>
+                <span>Final Proof of Delivery (Port Terminal Receiving Officer)</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 14px;">
+            <label class="form-label">Attach Digital Bill of Lading (PDF or Image)</label>
+            <input type="file" class="form-input">
+          </div>
+        </div>
+
+        <!-- Step 4: Review & Dispatch -->
+        <div class="wizard-step-pane" data-step="4">
+          <label class="form-label">Cryptographic EPCIS 2.0 Payload Preview</label>
+          <div id="wizardJsonPreview" class="json-preview-container"></div>
+          <div class="hash-pill">
+            <span style="font-size: 12px; color: var(--text-muted);">Payload Hash (SHA-256):</span>
+            <span id="wizardHashPreview" style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-emerald);">0x7a8fbc...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="cancelWizardBtn" class="btn btn-outline">Cancel</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="wizardPrevBtn" class="btn btn-secondary" style="visibility: hidden;">Back</button>
+          <button id="wizardNextBtn" class="btn btn-blue">Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: SHIPMENT DETAIL & DUAL-SIGNATURE TIMELINE (Section 07)        -->
+  <!-- ==================================================================== -->
+  <div id="shipmentDetailModal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 860px;">
+      <div class="modal-header">
+        <div>
+          <span id="detailShipmentId" class="modal-title">ZN-26041 · Sesame</span>
+          <div id="detailShipmentHash" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-subtle);">0x7f48...</div>
+        </div>
+        <button class="modal-close-btn" onclick="window.zenaApp.closeShipmentDetail()">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="shipment-detail-layout">
+          <!-- Metadata Column -->
+          <div style="background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 16px;">
+            <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 12px;">Consignment Details</h4>
+            <div class="meta-keyvalue">
+              <span class="meta-key">Sender</span>
+              <span id="detailMetaSender" class="meta-value">-</span>
+            </div>
+            <div class="meta-keyvalue">
+              <span class="meta-key">Carrier</span>
+              <span id="detailMetaCarrier" class="meta-value">-</span>
+            </div>
+            <div class="meta-keyvalue">
+              <span class="meta-key">Receiver</span>
+              <span id="detailMetaReceiver" class="meta-value">-</span>
+            </div>
+            <div class="meta-keyvalue">
+              <span class="meta-key">Route</span>
+              <span id="detailMetaRoute" class="meta-value">-</span>
+            </div>
+            <div class="meta-keyvalue">
+              <span class="meta-key">Agreed Rate</span>
+              <span id="detailMetaRate" class="meta-value" style="color: var(--accent-emerald);">-</span>
+            </div>
+          </div>
+
+          <!-- Custody Stepper Column -->
+          <div>
+            <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-subtle); margin-bottom: 16px;">Dual-Signed Custody Chain</h4>
+            <div id="detailCustodyTimeline" class="custody-timeline">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: CANVAS SIGNATURE PAD                                          -->
+  <!-- ==================================================================== -->
+  <div id="signaturePadModal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <span class="modal-title">Sign Handover Custody Event</span>
+        <button id="closeSigModalBtn" class="modal-close-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+          Draw your signature on the screen, or sign instantly with your Node ECDSA key.
+        </p>
+        <canvas id="signaturePadCanvas" class="signature-pad-canvas"></canvas>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+          <button id="clearSigBtn" class="btn btn-outline btn-sm">Clear Canvas</button>
+          <button id="cryptoQuickSignBtn" class="btn btn-secondary btn-sm">
+            <i data-lucide="key" style="width: 13px; height: 13px;"></i>
+            <span>Sign with Node Key</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="document.getElementById('signaturePadModal').classList.remove('active')">Cancel</button>
+        <button id="confirmSigBtn" class="btn btn-primary">Confirm &amp; Sign Handover</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: SETTLEMENT CRYPTOGRAPHIC RECEIPT                              -->
+  <!-- ==================================================================== -->
+  <div id="settlementReceiptModal" class="modal-backdrop">
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <span class="modal-title" style="color: var(--accent-emerald);">Automated Settlement Executed</span>
+        <button class="modal-close-btn" onclick="window.zenaApp.closeReceiptModal()">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div style="text-align: center; margin-bottom: 16px;">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--accent-emerald-bg); color: var(--accent-emerald); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
+            <i data-lucide="check" style="width: 28px; height: 28px;"></i>
+          </div>
+          <h3 id="receiptAmount" style="font-size: 22px; font-weight: 700; color: var(--text-primary);">€28,800.00 EUR</h3>
+          <p style="font-size: 12px; color: var(--text-muted);">Disbursed to Carrier via Licensed Banking Rails</p>
+        </div>
+
+        <div style="background: var(--bg-deep); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; font-size: 12px;">
+          <div class="meta-keyvalue">
+            <span class="meta-key">Receipt ID</span>
+            <span id="receiptId" class="meta-value mono-id">-</span>
+          </div>
+          <div class="meta-keyvalue">
+            <span class="meta-key">Consortium Block</span>
+            <span id="receiptBlock" class="meta-value mono-id">-</span>
+          </div>
+          <div class="meta-keyvalue">
+            <span class="meta-key">Bank Reference</span>
+            <span id="receiptBankRef" class="meta-value mono-id">-</span>
+          </div>
+          <div class="meta-keyvalue">
+            <span class="meta-key">Settlement Hash</span>
+            <span id="receiptHash" class="meta-value mono-id" style="font-size: 10px; word-break: break-all;">-</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="window.zenaApp.closeReceiptModal()">Close</button>
+        <button class="btn btn-primary" onclick="window.zenaApp.closeReceiptModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- App Main Entry Point (ES6 Module) -->
+  <script type="module" src="./js/app.js"></script>
+
+</body>
+</html>
