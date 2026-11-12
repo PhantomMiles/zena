@@ -32,7 +32,7 @@ contract EventRegistry is EIP712 {
         bytes32 indexed publisherId,
         address signer,
         bytes32 payloadHash,
-        uint256 nonce,
+        uint256 eventIndex,
         uint256 timestamp
     );
 
@@ -44,6 +44,7 @@ contract EventRegistry is EIP712 {
     error InvalidPayloadHash();
     error SignatureExpired(uint256 expiry);
     error InvalidSignature();
+    error InvalidNonce(uint256 provided, uint256 expected);
 
     constructor(address _membershipRegistry) EIP712("ZenaEventRegistry", "1") {
         if (_membershipRegistry == address(0)) revert InvalidMembershipRegistry();
@@ -55,6 +56,7 @@ contract EventRegistry is EIP712 {
      * @param shipmentId Associated shipment identifier
      * @param eventType Standard event type identifier (e.g. EPCIS ObjectEvent/AggregationEvent)
      * @param payloadHash SHA-256 fingerprint of the off-chain event document
+     * @param nonce Signer's next sequential nonce (ignored for direct, unsigned submissions)
      * @param expiry Expiration timestamp for the signature
      * @param signature EIP-712 signature from the member's registered node key
      */
@@ -62,6 +64,7 @@ contract EventRegistry is EIP712 {
         bytes32 shipmentId,
         bytes32 eventType,
         bytes32 payloadHash,
+        uint256 nonce,
         uint256 expiry,
         bytes calldata signature
     ) external returns (uint256 eventIndex) {
@@ -70,20 +73,9 @@ contract EventRegistry is EIP712 {
         if (payloadHash == bytes32(0)) revert InvalidPayloadHash();
         if (block.timestamp > expiry) revert SignatureExpired(expiry);
 
-        address callerOrSigner;
-        if (signature.length == 0) {
-            // Direct submission by node signer transaction
-            callerOrSigner = msg.sender;
-        } else {
-            // EIP-712 signature verification (supports relaying)
-            uint256 nonce = memberNonces[msg.sender];
-            bytes32 structHash = keccak256(
-                abi.encode(EVENT_TYPEHASH, shipmentId, eventType, payloadHash, nonce, expiry)
-            );
-            bytes32 digest = _hashTypedDataV4(structHash);
-            callerOrSigner = digest.recover(signature);
-            memberNonces[callerOrSigner]++;
-        }
+        address callerOrSigner = signature.length == 0
+            ? msg.sender
+            : _consumeSignedNonce(shipmentId, eventType, payloadHash, nonce, expiry, signature);
 
         if (!membershipRegistry.isNodeSignerActive(callerOrSigner)) {
             revert SignerNotActive(callerOrSigner);
@@ -105,5 +97,24 @@ contract EventRegistry is EIP712 {
             block.timestamp
         );
     }
-}
 
+    /// @dev Direct submissions (empty signature) are authenticated by msg.sender. For relayed
+    /// submissions the signer is recovered from the EIP-712 digest and THAT address's nonce is
+    /// consumed, so a relayer can never replay the same signature.
+    function _consumeSignedNonce(
+        bytes32 shipmentId,
+        bytes32 eventType,
+        bytes32 payloadHash,
+        uint256 nonce,
+        uint256 expiry,
+        bytes calldata signature
+    ) private returns (address signer) {
+        bytes32 structHash = keccak256(
+            abi.encode(EVENT_TYPEHASH, shipmentId, eventType, payloadHash, nonce, expiry)
+        );
+        signer = _hashTypedDataV4(structHash).recover(signature);
+        uint256 expectedNonce = memberNonces[signer];
+        if (nonce != expectedNonce) revert InvalidNonce(nonce, expectedNonce);
+        memberNonces[signer] = expectedNonce + 1;
+    }
+}

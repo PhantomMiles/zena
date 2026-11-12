@@ -69,6 +69,7 @@ export async function executeReleaseSettlement(shipmentId) {
     beneficiary: details.carrierName,
     beneficiaryNode: details.carrierNode,
     status: 'SETTLED',
+    simulated: true, // DEMO: hash, block number and bank reference are generated locally
   }
 
   const shipment = getShipmentById(shipmentId)

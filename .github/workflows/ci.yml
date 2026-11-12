@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -22,8 +22,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # No `version:` input: the version comes from "packageManager" in package.json.
+        # Setting both makes the action fail with "Multiple versions of pnpm specified".
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -33,6 +33,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Compile Solidity contracts
+        run: pnpm --filter @zena/contracts compile
 
       - name: Lint
         run: pnpm turbo lint
@@ -55,4 +58,3 @@ jobs:
       #     key: ${{ runner.os }}-turbo-${{ github.sha }}
       #     restore-keys: |
       #       ${{ runner.os }}-turbo-
-
