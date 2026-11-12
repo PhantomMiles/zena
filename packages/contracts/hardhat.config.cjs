@@ -28,7 +28,9 @@ module.exports = {
     version: SOLC_VERSION,
     settings: {
       optimizer: { enabled: true, runs: 200 },
-      evmVersion: 'shanghai',
+      // The devnet genesis (infra/devnet/scripts/generate.ts) activates forks only up to Istanbul,
+      // so bytecode must avoid PUSH0 (Shanghai) and BASEFEE (London) or deployment would fail.
+      evmVersion: 'istanbul',
     },
   },
   networks: {

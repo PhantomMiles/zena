@@ -90,13 +90,13 @@ async function activeShipment(ctx, name = 'S1') {
     .connect(members.shipper.signer)
     .proposeShipment(shipmentId, members.carrier.id, termsHash, 100000n, ethers.hexlify(ethers.toUtf8Bytes('NGN')))
   const expiry = await futureExpiry()
-  const nonce = await agreement.memberNonces(members.carrier.id)
+  const nonce = 7n
   const sig = await members.carrier.signer.signTypedData(
     await domain('ZenaShipmentAgreement', agreement),
     ACTIVATE_TYPES,
     { shipmentId, termsHash, nonce, expiry },
   )
-  await agreement.activateShipment(shipmentId, expiry, sig)
+  await agreement.activateShipment(shipmentId, nonce, expiry, sig)
   return shipmentId
 }
 
@@ -129,7 +129,7 @@ async function signPod(ctx, shipmentId, receiver, overrides = {}) {
     shipmentId,
     receiverMemberId: receiver.id,
     podDocumentHash: id('pod'),
-    nonce: await agreement.memberNonces(receiver.id),
+    nonce: 11n,
     expiry: await futureExpiry(),
     ...overrides,
   }
@@ -139,7 +139,7 @@ async function signPod(ctx, shipmentId, receiver, overrides = {}) {
 
 async function deliver(ctx, shipmentId, receiver) {
   const { msg, sig } = await signPod(ctx, shipmentId, receiver)
-  return ctx.agreement.confirmDelivery(shipmentId, msg.receiverMemberId, msg.podDocumentHash, msg.expiry, sig)
+  return ctx.agreement.confirmDelivery(shipmentId, msg.receiverMemberId, msg.podDocumentHash, msg.nonce, msg.expiry, sig)
 }
 
 const State = { Proposed: 0, Active: 1, InTransit: 2, Delivered: 3, Settled: 4, Disputed: 5 }

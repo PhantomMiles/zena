@@ -70,7 +70,9 @@ contract ShipmentAgreement is EIP712 {
     // Storage
     mapping(bytes32 => Shipment) private _shipments;
     mapping(bytes32 => bool) public executedHandovers;
-    mapping(bytes32 => uint256) public memberNonces;
+    /// @notice memberId => nonce => used. Unordered, signer-chosen nonces for activation and proof of
+    /// delivery: the nonce is inside the signed message, so signing order does not matter.
+    mapping(bytes32 => mapping(uint256 => bool)) public nonceUsed;
     /// @notice Next expected `HandoverAuthorization.nonce` per shipment (strictly sequential).
     mapping(bytes32 => uint256) public handoverNonces;
 
@@ -130,6 +132,7 @@ contract ShipmentAgreement is EIP712 {
     error HandoverAlreadyExecuted(bytes32 handoverId);
     error UnauthorizedCaller();
     error InvalidAmount();
+    error NonceAlreadyUsed(bytes32 memberId, uint256 nonce);
     error NotCurrentCustodian(bytes32 givingMemberId, bytes32 custodianMemberId);
     error InvalidHandoverParties();
     error FirstHandoverMustReachCarrier(bytes32 carrierMemberId);
@@ -215,6 +218,7 @@ contract ShipmentAgreement is EIP712 {
      */
     function activateShipment(
         bytes32 shipmentId,
+        uint256 nonce,
         uint256 expiry,
         bytes calldata carrierSignature
     ) external {
@@ -227,7 +231,8 @@ contract ShipmentAgreement is EIP712 {
 
         MembershipRegistry.Member memory carrier = membershipRegistry.getMember(s.carrierMemberId);
 
-        uint256 nonce = memberNonces[s.carrierMemberId]++;
+        if (nonceUsed[s.carrierMemberId][nonce]) revert NonceAlreadyUsed(s.carrierMemberId, nonce);
+        nonceUsed[s.carrierMemberId][nonce] = true;
         bytes32 structHash = keccak256(
             abi.encode(ACTIVATE_SHIPMENT_TYPEHASH, shipmentId, s.termsHash, nonce, expiry)
         );
@@ -347,6 +352,7 @@ contract ShipmentAgreement is EIP712 {
         bytes32 shipmentId,
         bytes32 receiverMemberId,
         bytes32 podDocumentHash,
+        uint256 nonce,
         uint256 expiry,
         bytes calldata receiverSignature
     ) external {
@@ -366,7 +372,8 @@ contract ShipmentAgreement is EIP712 {
             revert SignerNotActive(receiver.nodeSigner);
         }
 
-        uint256 nonce = memberNonces[receiverMemberId]++;
+        if (nonceUsed[receiverMemberId][nonce]) revert NonceAlreadyUsed(receiverMemberId, nonce);
+        nonceUsed[receiverMemberId][nonce] = true;
         bytes32 structHash = keccak256(
             abi.encode(POD_TYPEHASH, shipmentId, receiverMemberId, podDocumentHash, nonce, expiry)
         );

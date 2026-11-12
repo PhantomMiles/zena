@@ -278,6 +278,50 @@ describe('Dispute state machine (Codex #5)', () => {
   })
 })
 
+describe('Signed nonces and review follow-ups', () => {
+  it('a proof of delivery signed with any nonce works regardless of signing order, once', async () => {
+    const ctx = await loadFixture(h.deployFixture)
+    const sid = await h.activeShipment(ctx)
+    await h.doHandover(ctx, sid, ctx.members.shipper, ctx.members.carrier)
+    const { msg, sig } = await h.signPod(ctx, sid, ctx.members.carrier, { nonce: 99n })
+    await ctx.agreement.confirmDelivery(sid, msg.receiverMemberId, msg.podDocumentHash, msg.nonce, msg.expiry, sig)
+    expect((await ctx.agreement.getShipment(sid)).state).to.equal(State.Delivered)
+    expect(await ctx.agreement.nonceUsed(ctx.members.carrier.id, 99n)).to.equal(true)
+  })
+
+  it('a used activation nonce cannot be reused', async () => {
+    const ctx = await loadFixture(h.deployFixture)
+    await h.activeShipment(ctx, 'A') // consumes carrier nonce 7
+    const sid = id('shipment:B')
+    const terms = id('terms:B')
+    await ctx.agreement
+      .connect(ctx.members.shipper.signer)
+      .proposeShipment(sid, ctx.members.carrier.id, terms, 5000n, ethers.hexlify(ethers.toUtf8Bytes('NGN')))
+    const expiry = await h.futureExpiry()
+    const sig = await ctx.members.carrier.signer.signTypedData(
+      await ctx.domain('ZenaShipmentAgreement', ctx.agreement),
+      { ActivateShipment: [
+        { name: 'shipmentId', type: 'bytes32' }, { name: 'termsHash', type: 'bytes32' },
+        { name: 'nonce', type: 'uint256' }, { name: 'expiry', type: 'uint256' } ] },
+      { shipmentId: sid, termsHash: terms, nonce: 7n, expiry },
+    )
+    await expect(ctx.agreement.activateShipment(sid, 7n, expiry, sig)).to.be.revertedWithCustomError(
+      ctx.agreement,
+      'NonceAlreadyUsed',
+    )
+  })
+
+  it('a suspended member cannot raise a dispute', async () => {
+    const ctx = await loadFixture(h.deployFixture)
+    const sid = await h.activeShipment(ctx)
+    await h.doHandover(ctx, sid, ctx.members.shipper, ctx.members.carrier)
+    await ctx.registry.connect(ctx.admin).setMemberStatus(ctx.members.shipper.id, 2)
+    await expect(
+      ctx.ledger.connect(ctx.members.shipper.signer).raiseDispute(sid, 1000n, id('ev')),
+    ).to.be.revertedWithCustomError(ctx.ledger, 'UnauthorizedSigner')
+  })
+})
+
 describe('MembershipRegistry / Governance extras', () => {
   it('setMemberStatus(None) is rejected (would orphan the signer mapping)', async () => {
     const ctx = await loadFixture(h.deployFixture)

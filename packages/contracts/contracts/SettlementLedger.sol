@@ -11,7 +11,7 @@ import { MembershipRegistry } from "./MembershipRegistry.sol";
  * @title SettlementLedger
  * @notice Auditable ledger of payment settlement instructions for the Zena Network.
  * @dev Emits off-chain payout instructions to licensed banking/PSP partners (Paystack, Flutterwave, bank rails).
- * Holds no ERC-20 tokens or Ether on-chain. Supports partial dispute escrow/holds and mediation.
+ * Holds no ERC-20 tokens or Ether on-chain. A dispute freezes the whole shipment until it is resolved by agreement or mediation.
  */
 contract SettlementLedger is AccessControl, EIP712 {
     using ECDSA for bytes32;
@@ -112,16 +112,10 @@ contract SettlementLedger is AccessControl, EIP712 {
             revert ShipmentNotDelivered(shipmentId);
         }
 
-        Dispute storage d = disputes[shipmentId];
+        // A disputed shipment is in state `Disputed`, so it cannot reach this point: disputes freeze
+        // the whole shipment until resolved. (The earlier "pay the undisputed portion" branch was
+        // unreachable and has been removed.)
         uint256 payoutAmount = s.totalAmountMinorUnits;
-
-        if (d.active) {
-            if (d.disputedAmountMinorUnits >= s.totalAmountMinorUnits) {
-                revert DisputeAlreadyActive(shipmentId);
-            }
-            // Pay undisputed portion
-            payoutAmount = s.totalAmountMinorUnits - d.disputedAmountMinorUnits;
-        }
 
         if (payoutAmount == 0) revert ZeroAmount();
 
@@ -145,7 +139,7 @@ contract SettlementLedger is AccessControl, EIP712 {
     }
 
     /**
-     * @notice Raises a dispute and holds only the disputed amount.
+     * @notice Raises a dispute. The shipment is frozen until the dispute is resolved.
      */
     function raiseDispute(
         bytes32 shipmentId,
@@ -163,6 +157,7 @@ contract SettlementLedger is AccessControl, EIP712 {
             revert InvalidDisputeAmount(disputedAmountMinorUnits, s.totalAmountMinorUnits);
         }
 
+        if (!membershipRegistry.isNodeSignerActive(msg.sender)) revert UnauthorizedSigner(msg.sender);
         MembershipRegistry.Member memory callerMember = membershipRegistry.getMemberBySigner(msg.sender);
         if (
             callerMember.memberId != s.shipperMemberId &&
