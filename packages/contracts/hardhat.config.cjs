@@ -1,29 +1,46 @@
 require('@nomicfoundation/hardhat-toolbox')
+const { subtask } = require('hardhat/config')
+const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require('hardhat/builtin-tasks/task-names')
+
+const SOLC_VERSION = '0.8.24'
+
+// Hardhat normally downloads the native compiler from binaries.soliditylang.org. In locked-down
+// networks set ZENA_SOLCJS=1 to use the `solc` npm package instead (slower, npm registry only).
+if (process.env.ZENA_SOLCJS === '1') {
+  subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, _hre, runSuper) => {
+    if (args.solcVersion === SOLC_VERSION) {
+      return {
+        compilerPath: require.resolve('solc/soljson.js'),
+        isSolcJs: true,
+        version: SOLC_VERSION,
+        longVersion: '0.8.24+commit.e11b9ed9',
+      }
+    }
+    return runSuper()
+  })
+}
+
+const deployerKey = process.env.ZENA_DEPLOYER_KEY
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: '0.8.24',
+    version: SOLC_VERSION,
     settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
-      },
-      evmVersion: 'shanghai',
+      optimizer: { enabled: true, runs: 200 },
+      // The devnet genesis (infra/devnet/scripts/generate.ts) activates forks only up to Istanbul,
+      // so bytecode must avoid PUSH0 (Shanghai) and BASEFEE (London) or deployment would fail.
+      evmVersion: 'istanbul',
     },
   },
   networks: {
-    hardhat: {
-      chainId: 1337,
-    },
+    hardhat: { chainId: 1337 },
     devnet: {
-      url: 'http://localhost:8545',
+      url: process.env.ZENA_RPC_URL ?? 'http://127.0.0.1:8545',
       chainId: 1337,
-      accounts: [
-        // Deterministic private key of Dev Account 1 funded in genesis.json
-        // For devnet deployment only
-        '0x7a656e612d6465762d6163636f756e742d310000000000000000000000000000',
-      ],
+      gasPrice: 0,
+      // Never commit a key. Export ZENA_DEPLOYER_KEY (see .env.example) before deploying.
+      accounts: deployerKey ? [deployerKey] : [],
     },
   },
   paths: {
@@ -33,4 +50,3 @@ module.exports = {
     artifacts: './artifacts',
   },
 }
-

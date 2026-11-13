@@ -49,7 +49,9 @@ contract Governance {
     uint256 public thresholdPercent; // e.g. 51 (>50% of cast votes must be FOR)
 
     uint256 public proposalCount;
-    mapping(uint256 => Proposal) public proposals;
+    // Not `public`: the auto-generated getter for a 16-field struct cannot compile ("Stack too
+    // deep"). Use `getProposal` instead.
+    mapping(uint256 => Proposal) internal proposals;
     mapping(uint256 => mapping(bytes32 => bool)) public hasVoted;
 
     // Events
@@ -137,43 +139,31 @@ contract Governance {
         bool validatorAuth
     ) internal returns (uint256 proposalId) {
         if (!membershipRegistry.isNodeSignerActive(msg.sender)) revert NotActiveMember();
-        MembershipRegistry.Member memory proposer = membershipRegistry.getMemberBySigner(msg.sender);
-
-        uint256 activeMembers = membershipRegistry.getActiveMemberCount();
-        if (activeMembers == 0) revert NotActiveMember();
+        bytes32 proposerId = membershipRegistry.getMemberBySigner(msg.sender).memberId;
 
         proposalId = ++proposalCount;
 
-        uint256 startBlock = block.number + votingDelayBlocks;
-        uint256 endBlock = startBlock + votingPeriodBlocks;
+        // Field-by-field storage writes and few locals: a 16-field struct literal exceeds the
+        // EVM stack ("Stack too deep"), which was a third compile blocker in the original source.
+        Proposal storage p = proposals[proposalId];
+        p.id = proposalId;
+        p.proposerMemberId = proposerId;
+        p.target = target;
+        p.callData = callData;
+        p.descriptionHash = descriptionHash;
+        p.startBlock = block.number + votingDelayBlocks;
+        p.endBlock = p.startBlock + votingPeriodBlocks;
+        p.totalVotersAtCreation = _activeMembersOrRevert();
+        p.isValidatorUpdate = isValidatorUpdate;
+        p.validatorAddress = validatorAddress;
+        p.validatorAuth = validatorAuth;
 
-        proposals[proposalId] = Proposal({
-            id: proposalId,
-            proposerMemberId: proposer.memberId,
-            target: target,
-            callData: callData,
-            descriptionHash: descriptionHash,
-            startBlock: startBlock,
-            endBlock: endBlock,
-            executionTime: 0,
-            forVotes: 0,
-            againstVotes: 0,
-            totalVotersAtCreation: activeMembers,
-            executed: false,
-            canceled: false,
-            isValidatorUpdate: isValidatorUpdate,
-            validatorAddress: validatorAddress,
-            validatorAuth: validatorAuth
-        });
+        emit ProposalCreated(proposalId, proposerId, target, descriptionHash, p.startBlock, p.endBlock);
+    }
 
-        emit ProposalCreated(
-            proposalId,
-            proposer.memberId,
-            target,
-            descriptionHash,
-            startBlock,
-            endBlock
-        );
+    function _activeMembersOrRevert() private view returns (uint256 activeMembers) {
+        activeMembers = membershipRegistry.getActiveMemberCount();
+        if (activeMembers == 0) revert NotActiveMember();
     }
 
     /**
@@ -265,5 +255,10 @@ contract Governance {
         if (p.executionTime == 0) return ProposalState.Succeeded;
         return ProposalState.Queued;
     }
-}
 
+    function getProposal(uint256 proposalId) external view returns (Proposal memory) {
+        Proposal memory p = proposals[proposalId];
+        if (p.id == 0) revert ProposalNotFound(proposalId);
+        return p;
+    }
+}

@@ -93,19 +93,26 @@ export class SignaturePad {
   }
 }
 
-// Generate cryptographic ECDSA simulation hash for signed payload
-export async function generateCryptoSignature(nodeAddress, payloadString) {
-  // Compute Web Crypto SHA-256 digest
-  const encoder = new TextEncoder()
-  const data = encoder.encode(nodeAddress + ':' + payloadString + ':' + Date.now())
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+/**
+ * DEMO MODE: this PWA is a front-end prototype. It holds no node private key and sends nothing to
+ * a Besu node. `computeLocalDigest` produces a SHA-256 integrity digest of the payload so the UI
+ * can show a fingerprint. It is NOT a signature: it is not secp256k1/ECDSA, is not bound to any
+ * key, and cannot be verified by the contracts. Real signing must use the EIP-712 typed data
+ * defined in packages/contracts (via the SDK + a wallet/node signer) and be submitted on-chain.
+ */
+export const DEMO_MODE = true
 
+export async function computeLocalDigest(payloadString) {
+  const data = new TextEncoder().encode(payloadString)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
   return {
-    algorithm: 'secp256k1-ECDSA-QBFT',
-    signerNode: nodeAddress,
-    signature: '0x' + hashHex + '1b',
+    algorithm: 'SHA-256 (local integrity digest, not a signature)',
+    digest: '0x' + hex,
+    signed: false,
+    onChain: false,
     timestamp: new Date().toISOString(),
   }
 }

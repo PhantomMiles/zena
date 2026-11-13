@@ -11,7 +11,7 @@ import { MembershipRegistry } from "./MembershipRegistry.sol";
  * @title SettlementLedger
  * @notice Auditable ledger of payment settlement instructions for the Zena Network.
  * @dev Emits off-chain payout instructions to licensed banking/PSP partners (Paystack, Flutterwave, bank rails).
- * Holds no ERC-20 tokens or Ether on-chain. Supports partial dispute escrow/holds and mediation.
+ * Holds no ERC-20 tokens or Ether on-chain. A dispute freezes the whole shipment until it is resolved by agreement or mediation.
  */
 contract SettlementLedger is AccessControl, EIP712 {
     using ECDSA for bytes32;
@@ -80,6 +80,7 @@ contract SettlementLedger is AccessControl, EIP712 {
     error SignatureExpired(uint256 expiry);
     error InvalidSignature();
     error ZeroAmount();
+    error PreDeliveryDisputeCannotPay(bytes32 shipmentId, uint256 payoutAmount);
 
     constructor(
         address _membershipRegistry,
@@ -111,16 +112,10 @@ contract SettlementLedger is AccessControl, EIP712 {
             revert ShipmentNotDelivered(shipmentId);
         }
 
-        Dispute storage d = disputes[shipmentId];
+        // A disputed shipment is in state `Disputed`, so it cannot reach this point: disputes freeze
+        // the whole shipment until resolved. (The earlier "pay the undisputed portion" branch was
+        // unreachable and has been removed.)
         uint256 payoutAmount = s.totalAmountMinorUnits;
-
-        if (d.active) {
-            if (d.disputedAmountMinorUnits >= s.totalAmountMinorUnits) {
-                revert DisputeAlreadyActive(shipmentId);
-            }
-            // Pay undisputed portion
-            payoutAmount = s.totalAmountMinorUnits - d.disputedAmountMinorUnits;
-        }
 
         if (payoutAmount == 0) revert ZeroAmount();
 
@@ -144,7 +139,7 @@ contract SettlementLedger is AccessControl, EIP712 {
     }
 
     /**
-     * @notice Raises a dispute and holds only the disputed amount.
+     * @notice Raises a dispute. The shipment is frozen until the dispute is resolved.
      */
     function raiseDispute(
         bytes32 shipmentId,
@@ -162,6 +157,7 @@ contract SettlementLedger is AccessControl, EIP712 {
             revert InvalidDisputeAmount(disputedAmountMinorUnits, s.totalAmountMinorUnits);
         }
 
+        if (!membershipRegistry.isNodeSignerActive(msg.sender)) revert UnauthorizedSigner(msg.sender);
         MembershipRegistry.Member memory callerMember = membershipRegistry.getMemberBySigner(msg.sender);
         if (
             callerMember.memberId != s.shipperMemberId &&
@@ -210,43 +206,52 @@ contract SettlementLedger is AccessControl, EIP712 {
             revert InvalidDisputeAmount(agreedPayoutMinorUnits, s.totalAmountMinorUnits);
         }
 
-        MembershipRegistry.Member memory shipper = membershipRegistry.getMember(s.shipperMemberId);
-        MembershipRegistry.Member memory carrier = membershipRegistry.getMember(s.carrierMemberId);
-
-        uint256 nonce = disputeNonces[shipmentId]++;
-        bytes32 structHash = keccak256(
-            abi.encode(DISPUTE_RESOLUTION_TYPEHASH, shipmentId, agreedPayoutMinorUnits, referenceHash, nonce, expiry)
-        );
-        bytes32 digest = _hashTypedDataV4(structHash);
-
-        address recoveredShipper = digest.recover(shipperSignature);
-        address recoveredCarrier = digest.recover(carrierSignature);
-
-        if (recoveredShipper != shipper.nodeSigner) revert UnauthorizedSigner(recoveredShipper);
-        if (recoveredCarrier != carrier.nodeSigner) revert UnauthorizedSigner(recoveredCarrier);
+        bytes32 digest = _resolutionDigest(shipmentId, agreedPayoutMinorUnits, referenceHash, expiry);
+        _requireSignedBy(digest, shipperSignature, s.shipperMemberId);
+        _requireSignedBy(digest, carrierSignature, s.carrierMemberId);
 
         d.active = false;
         d.resolved = true;
         d.resolvedAt = block.timestamp;
 
-        settledShipments[shipmentId] = true;
-        shipmentAgreement.markSettled(shipmentId);
-
-        instructionId = nextInstructionId++;
-
         emit DisputeResolved(shipmentId, agreedPayoutMinorUnits, referenceHash, msg.sender, block.timestamp);
 
-        if (agreedPayoutMinorUnits > 0) {
-            emit SettlementInstructionEmitted(
-                instructionId,
-                shipmentId,
-                s.carrierMemberId,
-                carrier.nodeSigner,
-                agreedPayoutMinorUnits,
-                s.currencyCode,
-                referenceHash,
-                block.timestamp
+        instructionId = _closeShipmentAfterDispute(
+            s,
+            agreedPayoutMinorUnits,
+            referenceHash,
+            membershipRegistry.getMember(s.carrierMemberId).nodeSigner
+        );
+    }
+
+    /// @dev The signing helpers below are split out of `resolveDisputeByAgreement` to keep the EVM
+    /// stack shallow. The original inline version failed with "Stack too deep", a second compile
+    /// blocker beyond the syntax error in ShipmentAgreement.
+    function _resolutionDigest(
+        bytes32 shipmentId,
+        uint256 agreedPayoutMinorUnits,
+        bytes32 referenceHash,
+        uint256 expiry
+    ) private returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        DISPUTE_RESOLUTION_TYPEHASH,
+                        shipmentId,
+                        agreedPayoutMinorUnits,
+                        referenceHash,
+                        disputeNonces[shipmentId]++,
+                        expiry
+                    )
+                )
             );
+    }
+
+    function _requireSignedBy(bytes32 digest, bytes calldata signature, bytes32 memberId) private view {
+        address recovered = digest.recover(signature);
+        if (recovered != membershipRegistry.getMember(memberId).nodeSigner) {
+            revert UnauthorizedSigner(recovered);
         }
     }
 
@@ -270,21 +275,44 @@ contract SettlementLedger is AccessControl, EIP712 {
         d.resolved = true;
         d.resolvedAt = block.timestamp;
 
-        settledShipments[shipmentId] = true;
-        shipmentAgreement.markSettled(shipmentId);
-
         MembershipRegistry.Member memory carrier = membershipRegistry.getMember(s.carrierMemberId);
-
-        instructionId = nextInstructionId++;
 
         emit DisputeResolved(shipmentId, payoutAmountMinorUnits, referenceHash, msg.sender, block.timestamp);
 
+        instructionId = _closeShipmentAfterDispute(s, payoutAmountMinorUnits, referenceHash, carrier.nodeSigner);
+    }
+
+    /**
+     * @dev Shared tail of both resolution paths.
+     * - Dispute raised AFTER delivery: shipment settles and, if the payout is non-zero, an
+     *   instruction is emitted.
+     * - Dispute raised BEFORE delivery: nothing may be paid (no delivery has been proven). The
+     *   shipment simply resumes in its pre-dispute state so custody/delivery can complete.
+     */
+    function _closeShipmentAfterDispute(
+        ShipmentAgreement.Shipment memory s,
+        uint256 payoutAmountMinorUnits,
+        bytes32 referenceHash,
+        address payeeSigner
+    ) private returns (uint256 instructionId) {
+        if (s.preDisputeState != ShipmentAgreement.ShipmentState.Delivered) {
+            if (payoutAmountMinorUnits != 0) {
+                revert PreDeliveryDisputeCannotPay(s.shipmentId, payoutAmountMinorUnits);
+            }
+            shipmentAgreement.restoreFromDispute(s.shipmentId);
+            return 0;
+        }
+
+        settledShipments[s.shipmentId] = true;
+        shipmentAgreement.markSettled(s.shipmentId);
+
         if (payoutAmountMinorUnits > 0) {
+            instructionId = nextInstructionId++;
             emit SettlementInstructionEmitted(
                 instructionId,
-                shipmentId,
+                s.shipmentId,
                 s.carrierMemberId,
-                carrier.nodeSigner,
+                payeeSigner,
                 payoutAmountMinorUnits,
                 s.currencyCode,
                 referenceHash,
@@ -293,4 +321,3 @@ contract SettlementLedger is AccessControl, EIP712 {
         }
     }
 }
-

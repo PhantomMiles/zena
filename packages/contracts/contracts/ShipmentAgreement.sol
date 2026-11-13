@@ -35,6 +35,7 @@ contract ShipmentAgreement is EIP712 {
         ShipmentState state;
         ShipmentState preDisputeState;
         uint256 handoverCount;
+        bytes32 custodianMemberId;
         uint256 createdAt;
         uint256 activatedAt;
         uint256 deliveredAt;
@@ -69,7 +70,11 @@ contract ShipmentAgreement is EIP712 {
     // Storage
     mapping(bytes32 => Shipment) private _shipments;
     mapping(bytes32 => bool) public executedHandovers;
-    mapping(bytes32 => uint256) public memberNonces;
+    /// @notice memberId => nonce => used. Unordered, signer-chosen nonces for activation and proof of
+    /// delivery: the nonce is inside the signed message, so signing order does not matter.
+    mapping(bytes32 => mapping(uint256 => bool)) public nonceUsed;
+    /// @notice Next expected `HandoverAuthorization.nonce` per shipment (strictly sequential).
+    mapping(bytes32 => uint256) public handoverNonces;
 
     // Authorized SettlementLedger address
     address public settlementLedger;
@@ -127,6 +132,15 @@ contract ShipmentAgreement is EIP712 {
     error HandoverAlreadyExecuted(bytes32 handoverId);
     error UnauthorizedCaller();
     error InvalidAmount();
+    error NonceAlreadyUsed(bytes32 memberId, uint256 nonce);
+    error NotCurrentCustodian(bytes32 givingMemberId, bytes32 custodianMemberId);
+    error InvalidHandoverParties();
+    error FirstHandoverMustReachCarrier(bytes32 carrierMemberId);
+    error InvalidHandoverNonce(uint256 provided, uint256 expected);
+    error DeliveryRequiresHandover();
+    error NotFinalReceiver(bytes32 receiverMemberId, bytes32 custodianMemberId);
+    error DisputeNotAllowedInState(ShipmentState current);
+    error SettlementRequiresDelivery(bytes32 shipmentId);
 
     modifier onlySettlementLedger() {
         if (msg.sender != settlementLedger) revert UnauthorizedCaller();
@@ -183,6 +197,7 @@ contract ShipmentAgreement is EIP712 {
             state: ShipmentState.Proposed,
             preDisputeState: ShipmentState.Proposed,
             handoverCount: 0,
+            custodianMemberId: shipper.memberId,
             createdAt: block.timestamp,
             activatedAt: 0,
             deliveredAt: 0
@@ -203,6 +218,7 @@ contract ShipmentAgreement is EIP712 {
      */
     function activateShipment(
         bytes32 shipmentId,
+        uint256 nonce,
         uint256 expiry,
         bytes calldata carrierSignature
     ) external {
@@ -215,7 +231,8 @@ contract ShipmentAgreement is EIP712 {
 
         MembershipRegistry.Member memory carrier = membershipRegistry.getMember(s.carrierMemberId);
 
-        uint256 nonce = memberNonces[s.carrierMemberId]++;
+        if (nonceUsed[s.carrierMemberId][nonce]) revert NonceAlreadyUsed(s.carrierMemberId, nonce);
+        nonceUsed[s.carrierMemberId][nonce] = true;
         bytes32 structHash = keccak256(
             abi.encode(ACTIVATE_SHIPMENT_TYPEHASH, shipmentId, s.termsHash, nonce, expiry)
         );
@@ -254,6 +271,49 @@ contract ShipmentAgreement is EIP712 {
         }
         if (block.timestamp > auth.expiry) revert SignatureExpired(auth.expiry);
 
+        // Chain of custody: only the current custodian can give, to someone else, and the first
+        // hop must reach the contracted carrier. The shipper is the initial custodian, so no
+        // unrelated member can ever enter the chain without a participant's consent.
+        if (auth.givingMemberId != s.custodianMemberId) {
+            revert NotCurrentCustodian(auth.givingMemberId, s.custodianMemberId);
+        }
+        if (auth.receivingMemberId == auth.givingMemberId) revert InvalidHandoverParties();
+        if (s.handoverCount == 0 && auth.receivingMemberId != s.carrierMemberId) {
+            revert FirstHandoverMustReachCarrier(s.carrierMemberId);
+        }
+        uint256 expectedNonce = handoverNonces[auth.shipmentId];
+        if (auth.nonce != expectedNonce) revert InvalidHandoverNonce(auth.nonce, expectedNonce);
+
+        _verifyHandoverSignatures(auth, givingSignature, receivingSignature);
+
+        executedHandovers[auth.handoverId] = true;
+        handoverNonces[auth.shipmentId] = expectedNonce + 1;
+        s.custodianMemberId = auth.receivingMemberId;
+        s.handoverCount++;
+
+        ShipmentState previousState = s.state;
+        if (s.state != ShipmentState.InTransit) {
+            s.state = ShipmentState.InTransit;
+            emit ShipmentStateChanged(auth.shipmentId, previousState, ShipmentState.InTransit, block.timestamp);
+        }
+
+        emit HandoverConfirmed(
+            auth.shipmentId,
+            auth.handoverId,
+            auth.givingMemberId,
+            auth.receivingMemberId,
+            auth.conditionNotesHash,
+            s.handoverCount,
+            block.timestamp
+        );
+    }
+
+    /// @dev Split out of `confirmHandover` to keep the EVM stack shallow (no `viaIR` needed).
+    function _verifyHandoverSignatures(
+        HandoverAuthorization calldata auth,
+        bytes calldata givingSignature,
+        bytes calldata receivingSignature
+    ) private view {
         MembershipRegistry.Member memory giver = membershipRegistry.getMember(auth.givingMemberId);
         MembershipRegistry.Member memory receiver = membershipRegistry.getMember(auth.receivingMemberId);
 
@@ -280,28 +340,9 @@ contract ShipmentAgreement is EIP712 {
         if (recoveredGiver != giver.nodeSigner) {
             revert UnauthorizedSigner(recoveredGiver, auth.givingMemberId);
         }
-        if recoveredReceiver != receiver.nodeSigner {
+        if (recoveredReceiver != receiver.nodeSigner) {
             revert UnauthorizedSigner(recoveredReceiver, auth.receivingMemberId);
         }
-
-        executedHandovers[auth.handoverId] = true;
-        s.handoverCount++;
-
-        ShipmentState previousState = s.state;
-        if (s.state != ShipmentState.InTransit) {
-            s.state = ShipmentState.InTransit;
-            emit ShipmentStateChanged(auth.shipmentId, previousState, ShipmentState.InTransit, block.timestamp);
-        }
-
-        emit HandoverConfirmed(
-            auth.shipmentId,
-            auth.handoverId,
-            auth.givingMemberId,
-            auth.receivingMemberId,
-            auth.conditionNotesHash,
-            s.handoverCount,
-            block.timestamp
-        );
     }
 
     /**
@@ -311,13 +352,18 @@ contract ShipmentAgreement is EIP712 {
         bytes32 shipmentId,
         bytes32 receiverMemberId,
         bytes32 podDocumentHash,
+        uint256 nonce,
         uint256 expiry,
         bytes calldata receiverSignature
     ) external {
         Shipment storage s = _shipments[shipmentId];
         if (s.createdAt == 0) revert ShipmentNotFound(shipmentId);
-        if (s.state != ShipmentState.InTransit && s.state != ShipmentState.Active) {
+        if (s.state != ShipmentState.InTransit) {
             revert InvalidStateTransition(s.state, ShipmentState.Delivered);
+        }
+        if (s.handoverCount == 0) revert DeliveryRequiresHandover();
+        if (receiverMemberId != s.custodianMemberId) {
+            revert NotFinalReceiver(receiverMemberId, s.custodianMemberId);
         }
         if (block.timestamp > expiry) revert SignatureExpired(expiry);
 
@@ -326,7 +372,8 @@ contract ShipmentAgreement is EIP712 {
             revert SignerNotActive(receiver.nodeSigner);
         }
 
-        uint256 nonce = memberNonces[receiverMemberId]++;
+        if (nonceUsed[receiverMemberId][nonce]) revert NonceAlreadyUsed(receiverMemberId, nonce);
+        nonceUsed[receiverMemberId][nonce] = true;
         bytes32 structHash = keccak256(
             abi.encode(POD_TYPEHASH, shipmentId, receiverMemberId, podDocumentHash, nonce, expiry)
         );
@@ -347,11 +394,18 @@ contract ShipmentAgreement is EIP712 {
 
     /**
      * @notice Updates state to Settled (called by SettlementLedger once instructions emit).
+     * @dev Settlement is only reachable from a delivered shipment: either directly, or from a
+     * dispute that was raised after delivery (`preDisputeState == Delivered`).
      */
     function markSettled(bytes32 shipmentId) external onlySettlementLedger {
         Shipment storage s = _shipments[shipmentId];
         if (s.createdAt == 0) revert ShipmentNotFound(shipmentId);
-        if (s.state != ShipmentState.Delivered && s.state != ShipmentState.Disputed) {
+
+        bool deliveredDirectly = s.state == ShipmentState.Delivered;
+        bool deliveredThenDisputed = s.state == ShipmentState.Disputed &&
+            s.preDisputeState == ShipmentState.Delivered;
+        if (!deliveredDirectly && !deliveredThenDisputed) {
+            if (s.state == ShipmentState.Disputed) revert SettlementRequiresDelivery(shipmentId);
             revert InvalidStateTransition(s.state, ShipmentState.Settled);
         }
 
@@ -361,13 +415,15 @@ contract ShipmentAgreement is EIP712 {
     }
 
     /**
-     * @notice Updates state to Disputed (called by SettlementLedger).
+     * @notice Freezes a shipment in dispute (called by SettlementLedger).
+     * @dev Only shipments that are in custody (`InTransit`) or already delivered can be disputed.
+     * Proposed/Active shipments have no custody or delivery to dispute, and Settled is final.
      */
     function markDisputed(bytes32 shipmentId) external onlySettlementLedger {
         Shipment storage s = _shipments[shipmentId];
         if (s.createdAt == 0) revert ShipmentNotFound(shipmentId);
-        if (s.state == ShipmentState.Settled) {
-            revert InvalidStateTransition(s.state, ShipmentState.Disputed);
+        if (s.state != ShipmentState.InTransit && s.state != ShipmentState.Delivered) {
+            revert DisputeNotAllowedInState(s.state);
         }
 
         s.preDisputeState = s.state;
@@ -376,17 +432,21 @@ contract ShipmentAgreement is EIP712 {
     }
 
     /**
-     * @notice Restores pre-dispute state upon dispute resolution (called by SettlementLedger).
+     * @notice Returns a disputed shipment to the state it was in before the dispute
+     * (called by SettlementLedger when a dispute is resolved without settlement).
+     * @dev Replaces the old `resolveDisputeState(bytes32,ShipmentState)`, which accepted any
+     * target state. The destination is now fixed to `preDisputeState`.
      */
-    function resolveDisputeState(bytes32 shipmentId, ShipmentState resolvedState) external onlySettlementLedger {
+    function restoreFromDispute(bytes32 shipmentId) external onlySettlementLedger {
         Shipment storage s = _shipments[shipmentId];
         if (s.createdAt == 0) revert ShipmentNotFound(shipmentId);
         if (s.state != ShipmentState.Disputed) {
-            revert InvalidStateTransition(s.state, resolvedState);
+            revert InvalidStateTransition(s.state, s.preDisputeState);
         }
 
-        s.state = resolvedState;
-        emit ShipmentStateChanged(shipmentId, ShipmentState.Disputed, resolvedState, block.timestamp);
+        ShipmentState restored = s.preDisputeState;
+        s.state = restored;
+        emit ShipmentStateChanged(shipmentId, ShipmentState.Disputed, restored, block.timestamp);
     }
 
     // --- Views ---

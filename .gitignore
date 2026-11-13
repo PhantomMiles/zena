@@ -42,3 +42,8 @@ infra/devnet/genesis.json
 infra/devnet/static-nodes.json
 
 
+
+# Hardhat
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/typechain-types/

@@ -7,15 +7,25 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "compile": "hardhat compile",
+    "build": "hardhat compile && tsc --project tsconfig.json",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --coverage",
+    "test": "hardhat test && vitest run --coverage --dir src",
+    "test:contracts": "hardhat test",
+    "test:unit": "vitest run --coverage --dir src",
     "dev": "tsc --watch"
   },
   "devDependencies": {
-    "vitest": "*",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "5.0.2",
+    "@types/chai": "^4",
+    "@types/mocha": "^10.0.10",
     "@vitest/coverage-v8": "*",
-    "typescript": "*"
+    "chai": "^4.5.0",
+    "hardhat": "^2.22.0",
+    "solc": "0.8.24",
+    "typescript": "*",
+    "vitest": "*"
   }
 }

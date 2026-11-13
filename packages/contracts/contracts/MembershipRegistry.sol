@@ -80,6 +80,7 @@ contract MembershipRegistry is AccessControl, EIP712 {
     error InvalidSignature();
     error InvalidDID();
     error InvalidCredentialHash();
+    error InvalidStatus();
 
     constructor(address initialAdmin) EIP712("ZenaMembershipRegistry", "1") {
         if (initialAdmin == address(0)) revert InvalidSigner(address(0));
@@ -131,6 +132,8 @@ contract MembershipRegistry is AccessControl, EIP712 {
     ) external onlyRole(GOVERNANCE_ROLE) {
         Member storage member = _members[memberId];
         if (member.status == MemberStatus.None) revert MemberNotFound(memberId);
+        // `None` means "never registered"; allowing it would orphan the signer mapping.
+        if (status == MemberStatus.None) revert InvalidStatus();
 
         MemberStatus previous = member.status;
         member.status = status;

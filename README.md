@@ -67,7 +67,7 @@ zena/
 │   └── docker/      — Docker Compose for member node deploy kit (Phase 1)
 ├── docs/
 │   ├── blueprint.md        — full architecture and product spec
-│   ├── design-tokens.json  — colour, typography, spacing tokens
+│   ├── design-token.json  — colour, typography, spacing tokens
 │   └── ADR/                — Architecture Decision Records
 └── .github/workflows/ci.yml
 ```
