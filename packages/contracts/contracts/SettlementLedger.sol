@@ -40,6 +40,12 @@ contract SettlementLedger is AccessControl, EIP712 {
     mapping(bytes32 => uint256) public disputeNonces;
     uint256 public nextInstructionId;
 
+    // Mediation panel: N-of-M approval over the MEDIATION_ROLE holders
+    uint256 public mediatorCount;
+    uint256 public mediationThreshold;
+    mapping(bytes32 => uint256) public mediationApprovals; // outcome key => approvals
+    mapping(bytes32 => mapping(address => bool)) public hasApprovedMediation;
+
     // Events
     event SettlementInstructionEmitted(
         uint256 indexed instructionId,
@@ -59,6 +65,16 @@ contract SettlementLedger is AccessControl, EIP712 {
         bytes32 evidenceHash,
         uint256 timestamp
     );
+
+    event MediationApproved(
+        bytes32 indexed shipmentId,
+        address indexed mediator,
+        uint256 payoutAmountMinorUnits,
+        bytes32 referenceHash,
+        uint256 approvals,
+        uint256 threshold
+    );
+    event MediationThresholdUpdated(uint256 threshold);
 
     event DisputeResolved(
         bytes32 indexed shipmentId,
@@ -80,6 +96,8 @@ contract SettlementLedger is AccessControl, EIP712 {
     error SignatureExpired(uint256 expiry);
     error InvalidSignature();
     error ZeroAmount();
+    error InvalidThreshold(uint256 threshold, uint256 mediators);
+    error AlreadyApprovedMediation(address mediator);
     error PreDeliveryDisputeCannotPay(bytes32 shipmentId, uint256 payoutAmount);
 
     constructor(
@@ -95,7 +113,32 @@ contract SettlementLedger is AccessControl, EIP712 {
 
         _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
         _grantRole(MEDIATION_ROLE, initialAdmin);
+        mediationThreshold = 1; // raise via setMediationThreshold once a real panel is seated
         nextInstructionId = 1;
+    }
+
+    /**
+     * @notice Sets how many distinct mediators must approve the SAME outcome before it executes.
+     * @dev Admin should seat >= 3 independent mediators, set the threshold to a majority, then
+     * renounce its own MEDIATION_ROLE so no single deployer key can decide disputes.
+     */
+    function setMediationThreshold(uint256 threshold) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (threshold == 0 || threshold > mediatorCount) revert InvalidThreshold(threshold, mediatorCount);
+        mediationThreshold = threshold;
+        emit MediationThresholdUpdated(threshold);
+    }
+
+    function _grantRole(bytes32 role, address account) internal override returns (bool granted) {
+        granted = super._grantRole(role, account);
+        if (granted && role == MEDIATION_ROLE) mediatorCount++;
+    }
+
+    function _revokeRole(bytes32 role, address account) internal override returns (bool revoked) {
+        if (role == MEDIATION_ROLE && hasRole(role, account) && mediatorCount - 1 < mediationThreshold) {
+            revert InvalidThreshold(mediationThreshold, mediatorCount - 1);
+        }
+        revoked = super._revokeRole(role, account);
+        if (revoked && role == MEDIATION_ROLE) mediatorCount--;
     }
 
     /**
@@ -256,7 +299,9 @@ contract SettlementLedger is AccessControl, EIP712 {
     }
 
     /**
-     * @notice Resolves a dispute through network mediation panel (`MEDIATION_ROLE`).
+     * @notice Mediation panel vote. Each MEDIATION_ROLE holder approves a specific outcome
+     * (payout + reference); the dispute resolves once `mediationThreshold` distinct mediators
+     * have approved the same outcome. Returns 0 while approvals are still pending.
      */
     function resolveDisputeByMediation(
         bytes32 shipmentId,
@@ -271,6 +316,11 @@ contract SettlementLedger is AccessControl, EIP712 {
             revert InvalidDisputeAmount(payoutAmountMinorUnits, s.totalAmountMinorUnits);
         }
 
+        _recordMediationApproval(shipmentId, d.createdAt, payoutAmountMinorUnits, referenceHash);
+        if (_approvalsFor(shipmentId, d.createdAt, payoutAmountMinorUnits, referenceHash) < mediationThreshold) {
+            return 0;
+        }
+
         d.active = false;
         d.resolved = true;
         d.resolvedAt = block.timestamp;
@@ -280,6 +330,37 @@ contract SettlementLedger is AccessControl, EIP712 {
         emit DisputeResolved(shipmentId, payoutAmountMinorUnits, referenceHash, msg.sender, block.timestamp);
 
         instructionId = _closeShipmentAfterDispute(s, payoutAmountMinorUnits, referenceHash, carrier.nodeSigner);
+    }
+
+    function _outcomeKey(
+        bytes32 shipmentId,
+        uint256 disputeCreatedAt,
+        uint256 payout,
+        bytes32 referenceHash
+    ) private pure returns (bytes32) {
+        return keccak256(abi.encode(shipmentId, disputeCreatedAt, payout, referenceHash));
+    }
+
+    function _approvalsFor(
+        bytes32 shipmentId,
+        uint256 disputeCreatedAt,
+        uint256 payout,
+        bytes32 referenceHash
+    ) private view returns (uint256) {
+        return mediationApprovals[_outcomeKey(shipmentId, disputeCreatedAt, payout, referenceHash)];
+    }
+
+    function _recordMediationApproval(
+        bytes32 shipmentId,
+        uint256 disputeCreatedAt,
+        uint256 payout,
+        bytes32 referenceHash
+    ) private {
+        bytes32 key = _outcomeKey(shipmentId, disputeCreatedAt, payout, referenceHash);
+        if (hasApprovedMediation[key][msg.sender]) revert AlreadyApprovedMediation(msg.sender);
+        hasApprovedMediation[key][msg.sender] = true;
+        uint256 approvals = ++mediationApprovals[key];
+        emit MediationApproved(shipmentId, msg.sender, payout, referenceHash, approvals, mediationThreshold);
     }
 
     /**

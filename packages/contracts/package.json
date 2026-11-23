@@ -2,19 +2,20 @@
   "name": "@zena/contracts",
   "version": "0.0.0",
   "private": true,
-  "description": "Zena smart contracts — Solidity source for event registry, dual-signed handover, settlement, governance, and membership. Targets Hyperledger Besu (EVM-compatible).",
+  "description": "Zena smart contracts \u2014 Solidity source for event registry, dual-signed handover, settlement, governance, and membership. Targets Hyperledger Besu (EVM-compatible).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "compile": "hardhat compile",
     "build": "hardhat compile && tsc --project tsconfig.json",
-    "lint": "eslint src",
+    "lint": "eslint src && solhint \"contracts/**/*.sol\"",
     "typecheck": "tsc --noEmit",
     "test": "hardhat test && vitest run --coverage --dir src",
     "test:contracts": "hardhat test",
     "test:unit": "vitest run --coverage --dir src",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "lint:sol": "solhint \"contracts/**/*.sol\""
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
@@ -25,6 +26,7 @@
     "chai": "^4.5.0",
     "hardhat": "^2.22.0",
     "solc": "0.8.24",
+    "solhint": "^5.0.0",
     "typescript": "*",
     "vitest": "*"
   }
