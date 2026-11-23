@@ -4,7 +4,8 @@
 
 import { initDB, enqueueHandover, getQueuedHandovers, markAsSynced } from './db.js'
 import { startCamera, stopCamera, captureFrame } from './camera.js'
-import { SignaturePad, generateCryptoSignature } from './signature.js'
+import { SignaturePad, computeLocalDigest } from './signature.js'
+import { canSignOnChain, signHandover } from './eip712.js'
 import {
   getShipments,
   getShipmentById,
@@ -327,15 +328,18 @@ export async function syncOfflineQueue() {
     return
   }
 
-  showToast(`Syncing ${items.length} queued handover(s) to consortium ledger...`, 'info')
+  showToast(
+    `Demo: marking ${items.length} queued handover(s) as synced (no network call is made).`,
+    'info',
+  )
 
   for (const item of items) {
-    await new Promise((r) => setTimeout(r, 600)) // ledger commit simulation
+    await new Promise((r) => setTimeout(r, 600)) // DEMO: simulated delay, no ledger call
     await markAsSynced(item.id)
   }
 
   await updateOfflineQueueBadge()
-  showToast('All queued handovers committed successfully to Besu QBFT!', 'success')
+  showToast('Demo: queue cleared locally. Nothing was submitted to Besu.', 'info')
   renderCurrentView()
 }
 
@@ -716,11 +720,8 @@ async function updateWizardReviewJson() {
   }
 
   if (hashPreviewEl) {
-    const hash = await generateCryptoSignature(
-      '0xFE3B557E8Fb62b89F4916B721be55cEb828dBd73',
-      JSON.stringify(payload),
-    )
-    hashPreviewEl.textContent = hash.signature.slice(0, 36) + '...'
+    const hash = await computeLocalDigest(JSON.stringify(payload))
+    hashPreviewEl.textContent = hash.digest.slice(0, 36) + '... (SHA-256 digest, unsigned)'
   }
 }
 
@@ -735,7 +736,7 @@ async function submitShipmentCreation() {
 
   const newShipment = await createNewShipment(state.wizardData)
   closeCreateShipmentModal()
-  showToast(`Shipment ${newShipment.id} committed to Besu ledger!`, 'success')
+  showToast(`Shipment ${newShipment.id} saved locally (demo). Not yet submitted to Besu.`, 'info')
 
   if (nextBtn) nextBtn.disabled = false
   navigateToView('shipments')
@@ -847,22 +848,24 @@ function setupSignatureModal() {
       submitBtn.disabled = true
       submitBtn.textContent = 'Broadcasting Signature...'
 
-      const cryptoSig = await generateCryptoSignature(
-        '0xFE3B557E8Fb62b89F4916B721be55cEb828dBd73',
-        'HANDOVER_VERIFIED',
+      const cryptoSig = await computeLocalDigest(
+        `HANDOVER:${state.selectedShipmentId}:${state.activeSigningEventId}`,
       )
       attachEventSignature(
         state.selectedShipmentId,
         state.activeSigningEventId,
         state.activeCompany,
-        cryptoSig.signature,
+        cryptoSig.digest,
       )
 
       submitBtn.disabled = false
       submitBtn.textContent = 'Confirm & Sign'
       modal.classList.remove('active')
 
-      showToast('Dual-party signature confirmed and recorded on Besu node!', 'success')
+      showToast(
+        'Handwritten sign-off saved on this device (demo). Not signed on-chain or sent to Besu.',
+        'info',
+      )
       openShipmentDetail(state.selectedShipmentId)
       renderDashboardView()
     }
@@ -872,18 +875,52 @@ function setupSignatureModal() {
   const cryptoQuickBtn = document.getElementById('cryptoQuickSignBtn')
   if (cryptoQuickBtn) {
     cryptoQuickBtn.onclick = async () => {
-      const cryptoSig = await generateCryptoSignature(
-        '0xFE3B557E8Fb62b89F4916B721be55cEb828dBd73',
-        'NODE_KEY_AUTHORIZATION',
+      // Real path: wallet + configured contract addresses => genuine EIP-712 signature.
+      if (canSignOnChain()) {
+        try {
+          const shipment = getShipmentById(state.selectedShipmentId)
+          const idx = shipment
+            ? shipment.events.findIndex((e) => e.id === state.activeSigningEventId)
+            : 0
+          const evt = shipment && shipment.events[idx]
+          const { signer, signature } = await signHandover({
+            shipmentRef: state.selectedShipmentId,
+            giverRef: (evt && evt.giverName) || 'giver',
+            receiverRef: state.activeCompany,
+            nonce: Math.max(idx, 0), // sequential per-shipment nonce == position in the custody chain
+          })
+          attachEventSignature(
+            state.selectedShipmentId,
+            state.activeSigningEventId,
+            `${state.activeCompany} (${signer.slice(0, 6)}…${signer.slice(-4)})`,
+            signature,
+          )
+          modal.classList.remove('active')
+          showToast(
+            'Signed with your wallet (EIP-712). The giver must sign the same message before it can be submitted on-chain.',
+            'success',
+          )
+          openShipmentDetail(state.selectedShipmentId)
+          renderDashboardView()
+        } catch (err) {
+          showToast(`Wallet signing cancelled or failed: ${err.message}`, 'error')
+        }
+        return
+      }
+      const cryptoSig = await computeLocalDigest(
+        `NODE_KEY_DEMO:${state.selectedShipmentId}:${state.activeSigningEventId}`,
       )
       attachEventSignature(
         state.selectedShipmentId,
         state.activeSigningEventId,
-        `${state.activeCompany} (Node Key)`,
-        cryptoSig.signature,
+        `${state.activeCompany} (demo node key)`,
+        cryptoSig.digest,
       )
       modal.classList.remove('active')
-      showToast('Handover cryptographically signed via Node Key!', 'success')
+      showToast(
+        'Demo only: no node key is connected, so nothing was cryptographically signed.',
+        'warning',
+      )
       openShipmentDetail(state.selectedShipmentId)
       renderDashboardView()
     }

@@ -53,6 +53,8 @@ contract Governance {
     // deep"). Use `getProposal` instead.
     mapping(uint256 => Proposal) internal proposals;
     mapping(uint256 => mapping(bytes32 => bool)) public hasVoted;
+    /// @dev Timestamp at which each proposal was created; only members registered at or before it may vote.
+    mapping(uint256 => uint256) public proposalCreatedAt;
 
     // Events
     event ProposalCreated(
@@ -87,6 +89,11 @@ contract Governance {
     error TimelockNotMet(uint256 currentTime, uint256 executionTime);
     error ExecutionFailed();
     error InvalidParameter();
+    error InvalidTarget(address target);
+    error NotProposer(bytes32 memberId);
+    error NotEligibleToVote(bytes32 memberId);
+    error VoteCapReached(uint256 proposalId);
+    error ProposalNotCancelable(ProposalState current);
 
     constructor(
         address _membershipRegistry,
@@ -116,6 +123,7 @@ contract Governance {
         bytes calldata callData,
         bytes32 descriptionHash
     ) external returns (uint256 proposalId) {
+        if (target == address(0) || target == address(this)) revert InvalidTarget(target);
         return _createProposal(target, callData, descriptionHash, false, address(0), false);
     }
 
@@ -142,6 +150,7 @@ contract Governance {
         bytes32 proposerId = membershipRegistry.getMemberBySigner(msg.sender).memberId;
 
         proposalId = ++proposalCount;
+        proposalCreatedAt[proposalId] = block.timestamp;
 
         // Field-by-field storage writes and few locals: a 16-field struct literal exceeds the
         // EVM stack ("Stack too deep"), which was a third compile blocker in the original source.
@@ -178,6 +187,10 @@ contract Governance {
             revert InvalidProposalState(state(proposalId), ProposalState.Active);
         }
         if (hasVoted[proposalId][voter.memberId]) revert AlreadyVoted(voter.memberId);
+        // Snapshot rule: members who joined after the proposal was created cannot vote on it.
+        if (voter.registeredAt > proposalCreatedAt[proposalId]) revert NotEligibleToVote(voter.memberId);
+        // Hard cap: total votes can never exceed the electorate counted at creation.
+        if (p.forVotes + p.againstVotes >= p.totalVotersAtCreation) revert VoteCapReached(proposalId);
 
         hasVoted[proposalId][voter.memberId] = true;
 
@@ -188,6 +201,23 @@ contract Governance {
         }
 
         emit VoteCast(proposalId, voter.memberId, msg.sender, support);
+    }
+
+    /**
+     * @notice Cancels a proposal. Only the proposing member may cancel, and only before execution.
+     */
+    function cancel(uint256 proposalId) external {
+        if (!membershipRegistry.isNodeSignerActive(msg.sender)) revert NotActiveMember();
+        MembershipRegistry.Member memory caller = membershipRegistry.getMemberBySigner(msg.sender);
+
+        ProposalState s = state(proposalId);
+        if (s == ProposalState.Executed || s == ProposalState.Canceled) revert ProposalNotCancelable(s);
+
+        Proposal storage p = proposals[proposalId];
+        if (p.proposerMemberId != caller.memberId) revert NotProposer(caller.memberId);
+
+        p.canceled = true;
+        emit ProposalCanceled(proposalId);
     }
 
     /**
@@ -224,6 +254,8 @@ contract Governance {
         if (p.isValidatorUpdate) {
             emit ValidatorSetChangeExecuted(p.validatorAddress, p.validatorAuth);
         } else if (p.target != address(0)) {
+            // A call to an address without code would "succeed" silently; refuse it.
+            if (p.target.code.length == 0) revert InvalidTarget(p.target);
             (bool success, ) = p.target.call(p.callData);
             if (!success) revert ExecutionFailed();
         }

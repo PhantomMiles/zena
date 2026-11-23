@@ -1,5 +1,5 @@
 // Zena Network Service Worker (sw.js)
-const CACHE_NAME = 'zena-shell-v1'
+const CACHE_NAME = 'zena-shell-v2'
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS_TO_CACHE = [
   './js/db.js',
   './js/camera.js',
   './js/signature.js',
+  './js/eip712.js',
   './js/shipments.js',
   './js/settlements.js',
   './js/node-gov.js',

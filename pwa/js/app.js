@@ -5,6 +5,7 @@
 import { initDB, enqueueHandover, getQueuedHandovers, markAsSynced } from './db.js'
 import { startCamera, stopCamera, captureFrame } from './camera.js'
 import { SignaturePad, computeLocalDigest } from './signature.js'
+import { canSignOnChain, signHandover } from './eip712.js'
 import {
   getShipments,
   getShipmentById,
@@ -874,6 +875,38 @@ function setupSignatureModal() {
   const cryptoQuickBtn = document.getElementById('cryptoQuickSignBtn')
   if (cryptoQuickBtn) {
     cryptoQuickBtn.onclick = async () => {
+      // Real path: wallet + configured contract addresses => genuine EIP-712 signature.
+      if (canSignOnChain()) {
+        try {
+          const shipment = getShipmentById(state.selectedShipmentId)
+          const idx = shipment
+            ? shipment.events.findIndex((e) => e.id === state.activeSigningEventId)
+            : 0
+          const evt = shipment && shipment.events[idx]
+          const { signer, signature } = await signHandover({
+            shipmentRef: state.selectedShipmentId,
+            giverRef: (evt && evt.giverName) || 'giver',
+            receiverRef: state.activeCompany,
+            nonce: Math.max(idx, 0), // sequential per-shipment nonce == position in the custody chain
+          })
+          attachEventSignature(
+            state.selectedShipmentId,
+            state.activeSigningEventId,
+            `${state.activeCompany} (${signer.slice(0, 6)}…${signer.slice(-4)})`,
+            signature,
+          )
+          modal.classList.remove('active')
+          showToast(
+            'Signed with your wallet (EIP-712). The giver must sign the same message before it can be submitted on-chain.',
+            'success',
+          )
+          openShipmentDetail(state.selectedShipmentId)
+          renderDashboardView()
+        } catch (err) {
+          showToast(`Wallet signing cancelled or failed: ${err.message}`, 'error')
+        }
+        return
+      }
       const cryptoSig = await computeLocalDigest(
         `NODE_KEY_DEMO:${state.selectedShipmentId}:${state.activeSigningEventId}`,
       )

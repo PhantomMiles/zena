@@ -49,3 +49,21 @@ You can also directly double-click `pwa/index.html` in Windows Explorer. All cor
   - Pending Sign-off: Amber `#F59E0B`
   - Verified / Settled: Emerald `#10B981`
   - Error / Dispute: Crimson `#EF4444`
+
+## Real EIP-712 signing (wallet)
+
+`js/eip712.js` builds the same typed data the contracts verify (`HandoverAuthorization`, `ProofOfDelivery`)
+and asks an injected wallet to sign it with `eth_signTypedData_v4`. The PWA never holds a key.
+Enable it per deployment:
+
+```js
+localStorage.setItem(
+  'zena.contracts',
+  JSON.stringify({ chainId: 1337, shipmentAgreement: '0x<deployed address>' }),
+)
+```
+
+With a wallet and that config present, the node-key button produces a genuine signature. Otherwise the
+app stays in demo mode and says so. A handover needs BOTH parties to sign the same message, and it still
+has to be submitted to `ShipmentAgreement.confirmHandover` (submission is not wired into the PWA yet).
+String ids are mapped to `bytes32` with SHA-256; members must be registered with the same ids.
